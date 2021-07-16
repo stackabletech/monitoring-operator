@@ -33,7 +33,11 @@ pub struct MonitoringClusterSpec {
 // TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MonitoringConfig {}
+pub struct MonitoringConfig {
+    pub port: Option<u16>,
+    pub scrape_interval: Option<usize>,
+    pub evaluation_interval: Option<usize>,
+}
 
 impl Configuration for MonitoringConfig {
     type Configurable = MonitoringCluster;

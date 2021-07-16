@@ -497,15 +497,46 @@ impl MonitoringState {
 
             match property_name_kind {
                 PropertyNameKind::File(file_name) => {
-                    let zoo_cfg = product_config::writer::to_java_properties_string(
-                        transformed_config.iter(),
-                    )?;
+                    if file_name.as_str() != "prometheus.yaml" {
+                        continue;
+                    }
 
-                    // Now we need to create two configmaps per server.
-                    // The names are "zk-<cluster name>-<node name>-config" and "zk-<cluster name>-<node name>-data"
-                    // One for the configuration directory...
+                    let content = format!(
+                        "
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+scrape_configs:
+  - job_name: k8pods
+    scrape_interval: 10s
+    kubernetes_sd_configs:
+      - role: pod
+        kubeconfig_file: /home/malte/.kube/config 
+        namespaces:
+          names:
+            - {}
+        selectors:
+          - role: pod
+            field: spec.nodeName={}
+    relabel_configs:
+      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
+        action: replace
+        regex: ([^:]+)(?::\\d+)?;(\\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name",
+                        self.context.client.default_namespace, node_name
+                    );
+
                     let mut cm_config_data = BTreeMap::new();
-                    cm_config_data.insert(file_name.clone(), zoo_cfg);
+                    cm_config_data.insert(file_name.clone(), content);
 
                     config_maps.push(
                         ConfigMapBuilder::new()
@@ -547,10 +578,13 @@ impl MonitoringState {
         let mut container_builder = ContainerBuilder::new("monitoring");
         container_builder.image(format!("stackable/monitoring:{}", version.to_string()));
         container_builder.command(vec![
-            format!("{}/bin/zkServer.sh", "xyz"),
-            "start-foreground".to_string(),
-            // "--config".to_string(), TODO: Version 3.4 does not support --config but later versions do
-            "{{configroot}}/conf/zoo.cfg".to_string(),
+            format!("prometheus-{}.linux-amd64/prometheus", version.to_string()),
+            "--log.level debug".to_string(),
+            "--config.file=prometheus.yaml".to_string(),
+            "--web.enable-admin-api".to_string(),
+            // TODO: replace with port from config
+            format!("--web.listen-address=:{}", 9090),
+            "--config.file={{configroot}}/conf/prometheus.yaml".to_string(),
         ]);
         // One mount for the config directory, this will be relative to the extracted package
         container_builder.add_configmapvolume(cm_config_name, "conf".to_string());
@@ -662,21 +696,20 @@ impl ControllerStrategy for MonitoringStrategy {
             existing_pods.len()
         );
 
-        let zk_spec: MonitoringClusterSpec = context.resource.spec.clone();
+        let spec: MonitoringClusterSpec = context.resource.spec.clone();
 
         let mut eligible_nodes = HashMap::new();
 
         eligible_nodes.insert(
             MonitoringRole::Server.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &zk_spec.servers)
-                .await?,
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.servers).await?,
         );
 
         let mut roles = HashMap::new();
         roles.insert(
             MonitoringRole::Server.to_string(),
             (
-                vec![PropertyNameKind::File("zoo.cfg".to_string())],
+                vec![PropertyNameKind::File("prometheus.yaml".to_string())],
                 context.resource.spec.servers.clone().into(),
             ),
         );
