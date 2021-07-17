@@ -519,6 +519,10 @@ scrape_configs:
           - role: pod
             field: spec.nodeName={}
     relabel_configs:
+      # do not scrape yourself
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: monitoring
+        action: drop
       - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
         action: replace
         regex: ([^:]+)(?::\\d+)?;(\\d+)
