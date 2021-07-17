@@ -15,16 +15,14 @@ properties:
         - name: "port"
           kind:
             type: "file"
-            file: "zoo.cfg"
+            file: "prometheus.yaml"
       datatype:
         type: "string"
         unit: *unitPort
       defaultValues:
-        - value: "2181"
-      recommendedValues:
-        - value: "2181"
+        - value: "9090"
       roles:
         - name: "server"
-          required: true
+          required: false
       asOfVersion: "0.0.0"
       description: "The port for the WebUi."

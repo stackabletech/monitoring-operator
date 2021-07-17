@@ -2,21 +2,21 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: zookeeperclusters.zookeeper.stackable.tech
+  name: monitoringclusters.monitoring.stackable.tech
 spec:
-  group: zookeeper.stackable.tech
+  group: monitoring.stackable.tech
   names:
-    kind: ZookeeperCluster
-    plural: zookeeperclusters
+    kind: MonitoringCluster
+    plural: monitoringclusters
     shortNames:
-      - zk
-    singular: zookeepercluster
+      - mc
+    singular: monitoringcluster
   scope: Namespaced
   versions:
     - name: v1alpha1
       schema:
         openAPIV3Schema:
-          description: "Auto-generated derived type for ZookeeperClusterSpec via `CustomResource`"
+          description: "Auto-generated derived type for MonitoringClusterSpec via `CustomResource`"
           properties:
             spec:
               properties:
@@ -30,26 +30,18 @@ spec:
                     config:
                       nullable: true
                       properties:
-                        clientPort:
+                        evaluationInterval:
+                          format: uint
+                          minimum: 0.0
+                          nullable: true
+                          type: integer
+                        port:
                           format: uint16
                           minimum: 0.0
                           nullable: true
                           type: integer
-                        dataDir:
-                          nullable: true
-                          type: string
-                        initLimit:
-                          format: uint32
-                          minimum: 0.0
-                          nullable: true
-                          type: integer
-                        syncLimit:
-                          format: uint32
-                          minimum: 0.0
-                          nullable: true
-                          type: integer
-                        tickTime:
-                          format: uint32
+                        scrapeInterval:
+                          format: uint
                           minimum: 0.0
                           nullable: true
                           type: integer
@@ -77,26 +69,18 @@ spec:
                           config:
                             nullable: true
                             properties:
-                              clientPort:
+                              evaluationInterval:
+                                format: uint
+                                minimum: 0.0
+                                nullable: true
+                                type: integer
+                              port:
                                 format: uint16
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
-                              dataDir:
-                                nullable: true
-                                type: string
-                              initLimit:
-                                format: uint32
-                                minimum: 0.0
-                                nullable: true
-                                type: integer
-                              syncLimit:
-                                format: uint32
-                                minimum: 0.0
-                                nullable: true
-                                type: integer
-                              tickTime:
-                                format: uint32
+                              scrapeInterval:
+                                format: uint
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
@@ -157,8 +141,7 @@ spec:
                   type: object
                 version:
                   enum:
-                    - 3.4.14
-                    - 3.5.8
+                    - 2.28.1
                   type: string
               required:
                 - servers
@@ -209,20 +192,18 @@ spec:
                   x-kubernetes-list-type: map
                 currentVersion:
                   enum:
-                    - 3.4.14
-                    - 3.5.8
+                    - 2.28.1
                   nullable: true
                   type: string
                 targetVersion:
                   enum:
-                    - 3.4.14
-                    - 3.5.8
+                    - 2.28.1
                   nullable: true
                   type: string
               type: object
           required:
             - spec
-          title: ZookeeperCluster
+          title: MonitoringCluster
           type: object
       served: true
       storage: true

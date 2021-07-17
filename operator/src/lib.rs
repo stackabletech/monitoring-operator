@@ -432,7 +432,7 @@ impl MonitoringState {
         }
 
         let status = self.context.resource.status.clone().ok_or_else(|| error::Error::ReconcileError(
-            "`zk_status missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string(),
+            "`Prometheus status missing, this is a programming error and should never happen. Please report in our issue tracker.".to_string(),
         ))?;
 
         // If we reach here it means all pods must be running on target_version.
@@ -579,12 +579,11 @@ scrape_configs:
         container_builder.image(format!("stackable/monitoring:{}", version.to_string()));
         container_builder.command(vec![
             format!("prometheus-{}.linux-amd64/prometheus", version.to_string()),
+            "--config.file={{configroot}}/conf/prometheus.yaml".to_string(),
             "--log.level debug".to_string(),
-            "--config.file=prometheus.yaml".to_string(),
             "--web.enable-admin-api".to_string(),
             // TODO: replace with port from config
             format!("--web.listen-address=:{}", 9090),
-            "--config.file={{configroot}}/conf/prometheus.yaml".to_string(),
         ]);
         // One mount for the config directory, this will be relative to the extracted package
         container_builder.add_configmapvolume(cm_config_name, "conf".to_string());
