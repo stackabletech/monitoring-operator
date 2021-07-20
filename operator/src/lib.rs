@@ -511,7 +511,7 @@ scrape_configs:
     scrape_interval: 10s
     kubernetes_sd_configs:
       - role: pod
-        kubeconfig_file: /home/malte/.kube/config 
+        kubeconfig_file: /home/malte/.kube/config # {{kubeconfig}}
         namespaces:
           names:
             - {}
@@ -523,11 +523,13 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
         regex: monitoring
         action: drop
+      # adapt port to provided pod container port
       - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
         action: replace
         regex: ([^:]+)(?::\\d+)?;(\\d+)
         replacement: $1:$2
         target_label: __address__
+      # use all provided pod labels
       - action: labelmap
         regex: __meta_kubernetes_pod_label_(.+)
       - source_labels: [__meta_kubernetes_namespace]
@@ -535,7 +537,22 @@ scrape_configs:
         target_label: kubernetes_namespace
       - source_labels: [__meta_kubernetes_pod_name]
         action: replace
-        target_label: kubernetes_pod_name",
+        target_label: kubernetes_pod_name
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        action: replace
+        target_label: kubernetes_pod_node_name
+      - source_labels: [__meta_kubernetes_pod_host_ip]
+        action: replace
+        target_label: kubernetes_pod_host_ip
+      - source_labels: [__meta_kubernetes_pod_uid]
+        action: replace
+        target_label: kubernetes_pod_uid
+      - source_labels: [__meta_kubernetes_pod_controller_kind]
+        action: replace
+        target_label: kubernetes_pod_controller_kind
+      - source_labels: [__meta_kubernetes_pod_controller_name]
+        action: replace
+        target_label: kubernetes_pod_controller_name",
                         self.context.client.default_namespace, node_name
                     );
 
@@ -747,7 +764,8 @@ pub async fn create_controller(client: Client) {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config = ProductConfigManager::from_yaml_file("config.yaml").unwrap();
+    let product_config =
+        ProductConfigManager::from_yaml_file("deploy/config-spec/properties.yaml").unwrap();
     let strategy = MonitoringStrategy::new(product_config);
 
     controller
