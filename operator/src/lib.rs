@@ -483,18 +483,11 @@ impl MonitoringState {
     ) -> Result<(Pod, Vec<ConfigMap>), Error> {
         let mut config_maps = vec![];
         let mut env_vars = vec![];
+        let mut cli_web_ui_port = "9090";
 
         let cm_config_name = format!("{}-config", pod_name);
 
         for (property_name_kind, config) in validated_config {
-            // we need to convert to <String, String> to <String, Option<String>> to deal with
-            // CLI flags etc. We can not currently represent that via operator-rs / product-config.
-            // This is a preparation for that.
-            let transformed_config: BTreeMap<String, Option<String>> = config
-                .iter()
-                .map(|(k, v)| (k.clone(), Some(v.clone())))
-                .collect();
-
             match property_name_kind {
                 PropertyNameKind::File(file_name) => {
                     if file_name.as_str() != "prometheus.yaml" {
@@ -519,6 +512,10 @@ scrape_configs:
           - role: pod
             field: spec.nodeName={}
     relabel_configs:
+      # only keep pods that have the \"monitoring.stackable.tech/should_be_scraped = true\" annotation.
+      - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
+        regex: true
+        action: keep
       # do not scrape yourself
       - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
         regex: monitoring
@@ -577,43 +574,41 @@ scrape_configs:
                     );
                 }
                 PropertyNameKind::Env => {
-                    for (property_name, property_value) in transformed_config {
+                    for (property_name, property_value) in config {
                         if property_name.is_empty() {
                             warn!("Received empty property_name for ENV... skipping");
                             continue;
                         }
 
                         env_vars.push(EnvVar {
-                            name: property_name,
-                            value: property_value,
+                            name: property_name.clone(),
+                            value: Some(property_value.clone()),
                             value_from: None,
                         });
                     }
                 }
-                _ => {}
+                PropertyNameKind::Cli => {
+                    if let Some(port) = config.get("webUiPort") {
+                        cli_web_ui_port = port
+                    }
+                }
             }
         }
 
         let version = &self.context.resource.spec.version.to_string();
 
         let mut container_builder = ContainerBuilder::new("monitoring");
-        container_builder.image(format!("stackable/monitoring:{}", version.to_string()));
+        container_builder.image(format!("stackable/prometheus:{}", version.to_string()));
         container_builder.command(vec![
             format!("prometheus-{}.linux-amd64/prometheus", version.to_string()),
             "--config.file={{configroot}}/conf/prometheus.yaml".to_string(),
             "--log.level debug".to_string(),
             "--web.enable-admin-api".to_string(),
-            // TODO: replace with port from config
-            format!("--web.listen-address=:{}", 9090),
+            format!("--web.listen-address=:{}", cli_web_ui_port),
         ]);
         // One mount for the config directory, this will be relative to the extracted package
         container_builder.add_configmapvolume(cm_config_name, "conf".to_string());
-
-        for env in env_vars {
-            if let Some(val) = env.value {
-                container_builder.add_env_var(env.name, val);
-            }
-        }
+        container_builder.add_env_vars(env_vars);
 
         let pod = PodBuilder::new()
             .metadata(
@@ -729,7 +724,10 @@ impl ControllerStrategy for MonitoringStrategy {
         roles.insert(
             MonitoringRole::Server.to_string(),
             (
-                vec![PropertyNameKind::File("prometheus.yaml".to_string())],
+                vec![
+                    PropertyNameKind::File("prometheus.yaml".to_string()),
+                    PropertyNameKind::Cli,
+                ],
                 context.resource.spec.servers.clone().into(),
             ),
         );

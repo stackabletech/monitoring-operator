@@ -34,7 +34,7 @@ pub struct MonitoringClusterSpec {
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringConfig {
-    pub port: Option<u16>,
+    pub web_ui_port: Option<u16>,
     pub scrape_interval: Option<usize>,
     pub evaluation_interval: Option<usize>,
 }
@@ -55,7 +55,11 @@ impl Configuration for MonitoringConfig {
         _resource: &Self::Configurable,
         _role_name: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
-        Ok(BTreeMap::new())
+        let mut result = BTreeMap::new();
+        if let Some(web_ui_port) = self.web_ui_port {
+            result.insert("webUiPort".to_string(), Some(web_ui_port.to_string()));
+        }
+        Ok(result)
     }
 
     fn compute_files(
@@ -64,13 +68,19 @@ impl Configuration for MonitoringConfig {
         _role_name: &str,
         _file: &str,
     ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
-        let temp = product_config::ser::to_hash_map(self).map_err(|err| {
-            ConfigError::InvalidConfiguration {
-                reason: format!("Could not deserialize config: {}", err.to_string()),
-            }
-        })?;
-        let result: BTreeMap<String, Option<String>> =
-            temp.into_iter().map(|(k, v)| (k, Some(v))).collect();
+        let mut result = BTreeMap::new();
+        if let Some(scrape_interval) = self.scrape_interval {
+            result.insert(
+                "scrapeInterval".to_string(),
+                Some(scrape_interval.to_string()),
+            );
+        }
+        if let Some(evaluation_interval) = self.evaluation_interval {
+            result.insert(
+                "evaluationInterval".to_string(),
+                Some(evaluation_interval.to_string()),
+            );
+        }
         Ok(result)
     }
 }

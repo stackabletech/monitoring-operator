@@ -35,13 +35,13 @@ spec:
                           minimum: 0.0
                           nullable: true
                           type: integer
-                        port:
-                          format: uint16
+                        scrapeInterval:
+                          format: uint
                           minimum: 0.0
                           nullable: true
                           type: integer
-                        scrapeInterval:
-                          format: uint
+                        webUiPort:
+                          format: uint16
                           minimum: 0.0
                           nullable: true
                           type: integer
@@ -74,13 +74,13 @@ spec:
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
-                              port:
-                                format: uint16
+                              scrapeInterval:
+                                format: uint
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
-                              scrapeInterval:
-                                format: uint
+                              webUiPort:
+                                format: uint16
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
