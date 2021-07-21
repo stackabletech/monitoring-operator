@@ -31,15 +31,17 @@ spec:
                       nullable: true
                       properties:
                         evaluationInterval:
-                          format: uint
-                          minimum: 0.0
                           nullable: true
-                          type: integer
+                          type: string
+                        scheme:
+                          nullable: true
+                          type: string
                         scrapeInterval:
-                          format: uint
-                          minimum: 0.0
                           nullable: true
-                          type: integer
+                          type: string
+                        scrapeTimeout:
+                          nullable: true
+                          type: string
                         webUiPort:
                           format: uint16
                           minimum: 0.0
@@ -70,15 +72,17 @@ spec:
                             nullable: true
                             properties:
                               evaluationInterval:
-                                format: uint
-                                minimum: 0.0
                                 nullable: true
-                                type: integer
+                                type: string
+                              scheme:
+                                nullable: true
+                                type: string
                               scrapeInterval:
-                                format: uint
-                                minimum: 0.0
                                 nullable: true
-                                type: integer
+                                type: string
+                              scrapeTimeout:
+                                nullable: true
+                                type: string
                               webUiPort:
                                 format: uint16
                                 minimum: 0.0

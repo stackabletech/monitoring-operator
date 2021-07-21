@@ -15,6 +15,7 @@ use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringVersion, APP_NAME,
+    PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
 };
 use stackable_operator::builder::{
     ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
@@ -50,6 +51,7 @@ use strum_macros::Display;
 use strum_macros::EnumIter;
 
 const FINALIZER_NAME: &str = "monitoring.stackable.tech/cleanup";
+const PROMETHEUS_CONFIG_YAML: &str = "prometheus.yaml";
 
 type MonitoringReconcileResult = ReconcileResult<error::Error>;
 
@@ -492,67 +494,17 @@ impl MonitoringState {
         for (property_name_kind, config) in validated_config {
             match property_name_kind {
                 PropertyNameKind::File(file_name) => {
-                    if file_name.as_str() != "prometheus.yaml" {
+                    if file_name.as_str() != PROMETHEUS_CONFIG_YAML {
                         continue;
                     }
 
-                    let content = format!(
-                        "
-global:
-  scrape_interval: 10s
-  evaluation_interval: 10s
-scrape_configs:
-  - job_name: k8pods
-    scrape_interval: 10s
-    kubernetes_sd_configs:
-      - role: pod
-        kubeconfig_file: /home/malte/.kube/config # {{kubeconfig}}
-        namespaces:
-          names:
-            - {}
-        selectors:
-          - role: pod
-            field: spec.nodeName={}
-    relabel_configs:
-      # only keep pods that have the \"monitoring.stackable.tech/should_be_scraped = true\" annotation.
-      - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
-        regex: true
-        action: keep
-      # do not scrape yourself
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-        regex: monitoring
-        action: drop
-      # adapt port to provided pod container port
-      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
-        action: replace
-        regex: ([^:]+)(?::\\d+)?;(\\d+)
-        replacement: $1:$2
-        target_label: __address__
-      # use all provided pod labels
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
-      - source_labels: [__meta_kubernetes_pod_node_name]
-        action: replace
-        target_label: kubernetes_pod_node_name
-      - source_labels: [__meta_kubernetes_pod_host_ip]
-        action: replace
-        target_label: kubernetes_pod_host_ip
-      - source_labels: [__meta_kubernetes_pod_uid]
-        action: replace
-        target_label: kubernetes_pod_uid
-      - source_labels: [__meta_kubernetes_pod_controller_kind]
-        action: replace
-        target_label: kubernetes_pod_controller_kind
-      - source_labels: [__meta_kubernetes_pod_controller_name]
-        action: replace
-        target_label: kubernetes_pod_controller_name",
-                        self.context.client.default_namespace, node_name
+                    let content = build_prometheus_yaml(
+                        &self.context.client.default_namespace,
+                        node_name,
+                        config.get(PROM_SCRAPE_INTERVAL),
+                        config.get(PROM_SCRAPE_TIMEOUT),
+                        config.get(PROM_EVALUATION_INTERVAL),
+                        config.get(PROM_SCHEME),
                     );
 
                     let mut cm_config_data = BTreeMap::new();
@@ -603,7 +555,10 @@ scrape_configs:
         container_builder.image(format!("stackable/prometheus:{}", version.to_string()));
         container_builder.command(vec![
             format!("prometheus-{}.linux-amd64/prometheus", version.to_string()),
-            "--config.file={{configroot}}/conf/prometheus.yaml".to_string(),
+            format!(
+                "--config.file={{{{configroot}}}}/conf/{}",
+                PROMETHEUS_CONFIG_YAML
+            ),
             "--log.level debug".to_string(),
             "--web.enable-admin-api".to_string(),
             format!("--web.listen-address=:{}", cli_web_ui_port),
@@ -727,7 +682,7 @@ impl ControllerStrategy for MonitoringStrategy {
             MonitoringRole::Server.to_string(),
             (
                 vec![
-                    PropertyNameKind::File("prometheus.yaml".to_string()),
+                    PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
                     PropertyNameKind::Cli,
                 ],
                 context.resource.spec.servers.clone().into(),
@@ -771,6 +726,81 @@ pub async fn create_controller(client: Client) {
     controller
         .run(client, strategy, Duration::from_secs(10))
         .await;
+}
+
+fn build_prometheus_yaml(
+    namespace: &str,
+    node_name: &str,
+    scrape_interval: Option<&String>,
+    scrape_timeout: Option<&String>,
+    evaluation_interval: Option<&String>,
+    scheme: Option<&String>,
+) -> String {
+    format!("
+global:
+  evaluation_interval: {}
+scrape_configs:
+  - job_name: k8pods
+    scrape_interval: {}
+    scrape_timeout: {}
+    scheme: {}
+    kubernetes_sd_configs:
+      - role: pod
+        kubeconfig_file: /home/malte/.kube/config # {{kubeconfig}}
+        namespaces:
+          names:
+            - {}
+        selectors:
+          - role: pod
+            field: spec.nodeName={}
+    relabel_configs:
+      # only keep pods that have the \"monitoring.stackable.tech/should_be_scraped = true\" annotation.
+      - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
+        regex: true
+        action: keep
+      # do not scrape yourself
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: monitoring
+        action: drop
+      # adapt port to provided pod container port
+      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
+        action: replace
+        regex: ([^:]+)(?::\\d+)?;(\\d+)
+        replacement: $1:$2
+        target_label: __address__
+      # use all provided pod labels
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        action: replace
+        target_label: kubernetes_pod_node_name
+      - source_labels: [__meta_kubernetes_pod_host_ip]
+        action: replace
+        target_label: kubernetes_pod_host_ip
+      - source_labels: [__meta_kubernetes_pod_uid]
+        action: replace
+        target_label: kubernetes_pod_uid
+      - source_labels: [__meta_kubernetes_pod_controller_kind]
+        action: replace
+        target_label: kubernetes_pod_controller_kind
+      - source_labels: [__meta_kubernetes_pod_controller_name]
+        action: replace
+        target_label: kubernetes_pod_controller_name", 
+        // TODO: this overwrites defaults from product config
+        //   Need to prepare this file in a better way
+        evaluation_interval.unwrap_or(&"10s".to_string()),
+        scrape_interval.unwrap_or(&"10s".to_string()),
+        scrape_timeout.unwrap_or(&"10s".to_string()),
+        scheme.unwrap_or(&"http".to_string()),
+        namespace,
+        node_name
+    )
 }
 
 #[cfg(test)]

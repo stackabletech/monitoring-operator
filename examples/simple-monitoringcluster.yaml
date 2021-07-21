@@ -13,6 +13,10 @@ spec:
         replicas: 1
         config:
           webUiPort: 10101
+          scrapeInterval: 15s
+          scrapeTimeout: 5s
+          evaluationInterval: 10s
+          scheme: http
 
 
 

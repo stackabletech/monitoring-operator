@@ -1,11 +1,13 @@
 version: 0.1.0
 spec:
   units:
-    - unit: &unitDirectory
-        name: "directory"
-        regex: "^/|(/[\\w-]+)+$"
+    - unit: &unitTime
+        name: "time"
+        regex: "((([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?|0)"
         examples:
-          - "/tmp/xyz"
+          - "100ms"
+          - "60m"
+          - "12h30m"
     - unit: &unitPort
         name: "port"
         regex: "^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
@@ -14,11 +16,12 @@ properties:
       propertyNames:
         - name: "port"
           kind:
-            type: "file"
-            file: "prometheus.yaml"
+            type: "cli"
       datatype:
-        type: "string"
+        type: "integer"
         unit: *unitPort
+        min: "1024"
+        max: "65535"
       defaultValues:
         - value: "9090"
       roles:
@@ -26,3 +29,73 @@ properties:
           required: false
       asOfVersion: "0.0.0"
       description: "The port for the WebUi."
+
+  - property: &scrapeInterval
+      propertyNames:
+        - name: "scrapeInterval"
+          kind:
+            type: "file"
+            file: "prometheus.yaml"
+      datatype:
+        type: "string"
+        unit: *unitTime
+      defaultValues:
+        - value: "10s"
+      roles:
+        - name: "server"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "How frequently to scrape targets from this job."
+
+  - property: &scrapeTimeout
+      propertyNames:
+        - name: "scrapeTimeout"
+          kind:
+            type: "file"
+            file: "prometheus.yaml"
+      datatype:
+        type: "string"
+        unit: *unitTime
+      defaultValues:
+        - value: "10s"
+      roles:
+        - name: "server"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "How long until a scrape request times out."
+
+  - property: &evaluationInterval
+      propertyNames:
+        - name: "evaluationInterval"
+          kind:
+            type: "file"
+            file: "prometheus.yaml"
+      datatype:
+        type: "string"
+        unit: *unitTime
+      defaultValues:
+        - value: "10s"
+      roles:
+        - name: "server"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "How frequently to evaluate rules."
+
+  - property: &scheme
+      propertyNames:
+        - name: "scheme"
+          kind:
+            type: "file"
+            file: "prometheus.yaml"
+      datatype:
+        type: "string"
+      defaultValues:
+        - value: "http"
+      allowedValues:
+        - http
+        - https
+      roles:
+        - name: "server"
+          required: false
+      asOfVersion: "0.0.0"
+      description: "Configures the protocol scheme used for requests."
