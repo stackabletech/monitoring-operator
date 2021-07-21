@@ -10,6 +10,7 @@ use serde_json::json;
 use tracing::{debug, error, info, trace, warn};
 
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use kube::error::ErrorResponse;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
@@ -35,10 +36,10 @@ use stackable_operator::product_config_utils::{
 use stackable_operator::reconcile::{
     ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
-use stackable_operator::role_utils;
 use stackable_operator::role_utils::{
     get_role_and_group_labels, list_eligible_nodes_for_role_and_group,
 };
+use stackable_operator::{pod_utils, role_utils};
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
@@ -276,6 +277,8 @@ impl MonitoringState {
     /// - Create if no config map of that name exists
     /// - Update if config map exists but the content differs
     /// - Do nothing if the config map exists and the content is identical
+    /// - Forward any kube errors that may appear
+    // TODO: move to operator-rs
     async fn create_config_map(&self, config_map: ConfigMap) -> Result<(), Error> {
         let cm_name = match config_map.metadata.name.as_deref() {
             None => return Err(Error::InvalidConfigMap),
@@ -304,12 +307,13 @@ impl MonitoringState {
                 );
                 self.context.client.update(&config_map).await?;
             }
-            Err(e) => {
-                // TODO: This is shit, but works for now. If there is an actual error in comes with
-                //   K8S, it will most probably also occur further down and be properly handled
-                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, e);
+            Err(stackable_operator::error::Error::KubeError {
+                source: kube::error::Error::Api(ErrorResponse { reason, .. }),
+            }) if reason == "NotFound" => {
+                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, reason);
                 self.context.client.create(&config_map).await?;
             }
+            Err(e) => return Err(Error::OperatorError { source: e }),
         }
 
         Ok(())
@@ -392,15 +396,13 @@ impl MonitoringState {
                             },
                         };
 
-                        let pod_name = format!(
-                            "{}-{}-{}-{}-{}",
+                        let pod_name = pod_utils::get_pod_name(
                             APP_NAME,
-                            self.context.name(),
+                            &self.context.name(),
                             role_group,
-                            monitoring_role,
-                            node_name
-                        )
-                        .to_lowercase();
+                            &monitoring_role.to_string(),
+                            node_name,
+                        );
 
                         let pod_labels = get_recommended_labels(
                             &self.context.resource,
