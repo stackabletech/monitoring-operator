@@ -554,7 +554,10 @@ impl MonitoringState {
         let mut container_builder = ContainerBuilder::new("monitoring");
         container_builder.image(format!("stackable/prometheus:{}", version.to_string()));
         container_builder.command(vec![
-            format!("prometheus-{}.linux-amd64/prometheus", version.to_string()),
+            format!(
+                "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
+                version.to_string()
+            ),
             format!(
                 "--config.file={{{{configroot}}}}/conf/{}",
                 PROMETHEUS_CONFIG_YAML
