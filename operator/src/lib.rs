@@ -563,6 +563,7 @@ impl MonitoringState {
                 PROMETHEUS_CONFIG_YAML
             ),
             "--log.level debug".to_string(),
+            // TODO: Enable admin api? Make configurable.
             "--web.enable-admin-api".to_string(),
             format!("--web.listen-address=:{}", cli_web_ui_port),
         ]);
@@ -731,6 +732,16 @@ pub async fn create_controller(client: Client) {
         .await;
 }
 
+/// Builds a prometheus yaml configuration file using Kubernetes Service Discovery.
+///
+/// The value 'KUBECONFIG' of the field kubeconfig_file (in kubernetes_sd_configs) will be replaced
+/// by the prometheus-wrapper.sh script with the content of the 'KUBECONFIG' environment variable
+/// set by the agent.
+///
+/// The relabel config checks for "monitoring.stackable.tech/scrape=true" and requires a container
+/// port (to be scraped) and a container port name ("metrics"). This is required for the Service
+/// Discovery. Additionally we relabel all existing pod labels and expose the host ip, pod ip,
+/// controller kind and controller name.
 fn build_prometheus_yaml(
     namespace: &str,
     node_name: &str,
@@ -749,7 +760,7 @@ scrape_configs:
     scheme: {}
     kubernetes_sd_configs:
       - role: pod
-        kubeconfig_file: /home/malte/.kube/config # {{kubeconfig}}
+        kubeconfig_file: KUBECONFIG
         namespaces:
           names:
             - {}
