@@ -12,7 +12,7 @@ spec:
             kubernetes.io/arch: stackable-linux
         replicas: 1
         config:
-          webUiPort: 9090
+          webUiPort: 10101
           scrapeInterval: 15s
           scrapeTimeout: 5s
           evaluationInterval: 10s

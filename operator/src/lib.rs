@@ -16,9 +16,10 @@ use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringVersion, APP_NAME,
     PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
+    PROM_WEB_UI_PORT,
 };
 use stackable_operator::builder::{
-    ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
+    ConfigMapBuilder, ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
 };
 use stackable_operator::cli;
 use stackable_operator::client::Client;
@@ -572,6 +573,12 @@ impl MonitoringState {
         // One mount for the config directory, this will be relative to the extracted package
         container_builder.add_configmapvolume(cm_config_name, "conf".to_string());
         container_builder.add_env_vars(env_vars);
+        // Expose the web ui port as container port
+        container_builder.add_container_port(
+            ContainerPortBuilder::new(cli_web_ui_port.parse::<u16>()?)
+                .name(PROM_WEB_UI_PORT.to_lowercase())
+                .build(),
+        );
 
         let pod = PodBuilder::new()
             .metadata(
@@ -716,7 +723,7 @@ impl ControllerStrategy for MonitoringStrategy {
 /// This creates an instance of a [`Controller`] which waits for incoming events and reconciles them.
 ///
 /// This is an async method and the returned future needs to be consumed to make progress.
-pub async fn create_controller(client: Client) {
+pub async fn create_controller(client: Client) -> OperatorResult<()> {
     let monitoring_api: Api<MonitoringCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
@@ -727,8 +734,12 @@ pub async fn create_controller(client: Client) {
 
     let product_config_path = cli::product_config_path(
         "monitoring-operator",
-        "/etc/stackable/monitoring-operator/config-spec/properties.yaml",
-    );
+        vec![
+            "deploy/config-spec/properties.yaml",
+            "/etc/stackable/monitoring-operator/config-spec/properties.yaml",
+        ],
+    )?;
+
     let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
 
     let strategy = MonitoringStrategy::new(product_config);
@@ -736,6 +747,8 @@ pub async fn create_controller(client: Client) {
     controller
         .run(client, strategy, Duration::from_secs(10))
         .await;
+
+    Ok(())
 }
 
 /// Builds a prometheus yaml configuration file using Kubernetes Service Discovery.
