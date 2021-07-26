@@ -756,6 +756,7 @@ fn build_prometheus_yaml(
     evaluation_interval: Option<&String>,
     scheme: Option<&String>,
 ) -> String {
+    // TODO: change "should_be_scraped" to "scrape"
     format!("
 global:
   evaluation_interval: {}
