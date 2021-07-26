@@ -20,6 +20,7 @@ use stackable_monitoring_crd::{
 use stackable_operator::builder::{
     ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
 };
+use stackable_operator::cli;
 use stackable_operator::client::Client;
 use stackable_operator::conditions::ConditionStatus;
 use stackable_operator::controller::Controller;
@@ -64,7 +65,7 @@ pub enum MonitoringRole {
 struct MonitoringState {
     context: ReconciliationContext<MonitoringCluster>,
     existing_pods: Vec<Pod>,
-    eligible_nodes: HashMap<String, HashMap<String, Vec<Node>>>,
+    eligible_nodes: HashMap<String, HashMap<String, (Vec<Node>, usize)>>,
     validated_role_config: ValidatedRoleConfigByPropertyKind,
 }
 
@@ -331,7 +332,7 @@ impl MonitoringState {
         //   - Role groups for this role (user defined)
         for monitoring_role in MonitoringRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&monitoring_role.to_string()) {
-                for (role_group, nodes) in nodes_for_role {
+                for (role_group, (nodes, replicas)) in nodes_for_role {
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         monitoring_role, role_group
@@ -361,6 +362,7 @@ impl MonitoringState {
                         nodes,
                         &self.existing_pods,
                         &get_role_and_group_labels(&monitoring_role.to_string(), role_group),
+                        *replicas,
                     );
 
                     for node in nodes_that_need_pods {
@@ -723,8 +725,12 @@ pub async fn create_controller(client: Client) {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config =
-        ProductConfigManager::from_yaml_file("deploy/config-spec/properties.yaml").unwrap();
+    let product_config_path = cli::product_config_path(
+        "monitoring-operator",
+        "/etc/stackable/monitoring-operator/config-spec/properties.yaml",
+    );
+    let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
+
     let strategy = MonitoringStrategy::new(product_config);
 
     controller
