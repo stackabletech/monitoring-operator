@@ -19,4 +19,6 @@ maintainer-scripts = "packaging/debian/"
 systemd-units = { enable = false }
 assets = [
     ["../target/release/stackable-monitoring-operator-server", "opt/stackable/monitoring-operator/", "755"],
+    ["../deploy/crd/monitoringcluster.crd.yaml", "etc/stackable/monitoring-operator/crd/", "644"],
+    ["../deploy/config-spec/properties.yaml", "etc/stackable/monitoring-operator/config-spec/", "644"],
 ]
