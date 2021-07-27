@@ -1,0 +1,5 @@
+name: monitoring
+version: master
+title: Stackable Operator for Monitoring and Metrics
+nav:
+  - modules/ROOT/nav.adoc
