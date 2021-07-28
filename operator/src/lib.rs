@@ -792,6 +792,11 @@ scrape_configs:
       - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
         regex: true
         action: keep
+      # only keep discovered pods with the container_port_name 'metrics'
+      # this avoids to discover other controller_port (e.g. clientPort in ZooKeeper)
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: metrics
       # do not scrape yourself
       - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
         regex: monitoring
