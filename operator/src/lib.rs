@@ -59,8 +59,15 @@ type MonitoringReconcileResult = ReconcileResult<error::Error>;
 
 #[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
 pub enum MonitoringRole {
-    #[strum(serialize = "server")]
-    Server,
+    /// The (pod-level) metrics aggregator. One per node required.
+    #[strum(serialize = "pods")]
+    Pod,
+    /// The (node-level) metrics. One per node required.
+    #[strum(serialize = "node")]
+    Node,
+    /// The Federation metrics. One per cluster required.
+    #[strum(serialize = "cluster")]
+    Cluster,
 }
 
 struct MonitoringState {
@@ -684,19 +691,45 @@ impl ControllerStrategy for MonitoringStrategy {
         let mut eligible_nodes = HashMap::new();
 
         eligible_nodes.insert(
-            MonitoringRole::Server.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.servers).await?,
+            MonitoringRole::Pod.to_string(),
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.pod).await?,
+        );
+
+        eligible_nodes.insert(
+            MonitoringRole::Node.to_string(),
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.node).await?,
+        );
+
+        eligible_nodes.insert(
+            MonitoringRole::Cluster.to_string(),
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.cluster).await?,
         );
 
         let mut roles = HashMap::new();
         roles.insert(
-            MonitoringRole::Server.to_string(),
+            MonitoringRole::Pod.to_string(),
             (
                 vec![
                     PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
                     PropertyNameKind::Cli,
                 ],
-                context.resource.spec.servers.clone().into(),
+                spec.pod.clone().into(),
+            ),
+        );
+
+        roles.insert(
+            MonitoringRole::Node.to_string(),
+            (vec![PropertyNameKind::Cli], spec.node.clone().into()),
+        );
+
+        roles.insert(
+            MonitoringRole::Cluster.to_string(),
+            (
+                vec![
+                    PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
+                    PropertyNameKind::Cli,
+                ],
+                spec.node.clone().into(),
             ),
         );
 

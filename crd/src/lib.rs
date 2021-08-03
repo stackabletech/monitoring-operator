@@ -13,11 +13,14 @@ use std::collections::BTreeMap;
 pub const APP_NAME: &str = "monitoring";
 pub const MANAGED_BY: &str = "monitoring-operator";
 
+// pod and cluster (federation) metrics level
 pub const PROM_SCRAPE_INTERVAL: &str = "scrapeInterval";
 pub const PROM_SCRAPE_TIMEOUT: &str = "scrapeTimeout";
 pub const PROM_EVALUATION_INTERVAL: &str = "evaluationInterval";
 pub const PROM_WEB_UI_PORT: &str = "webUiPort";
 pub const PROM_SCHEME: &str = "scheme";
+// node metrics level
+pub const NODE_METRICS_PORT: &str = "metricsPort";
 
 // TODO: We need to validate the name of the cluster because it is used in pod and configmap names, it can't bee too long
 // This probably also means we shouldn't use the node_names in the pod_name...
@@ -33,13 +36,15 @@ pub const PROM_SCHEME: &str = "scheme";
 #[kube(status = "MonitoringClusterStatus")]
 pub struct MonitoringClusterSpec {
     pub version: MonitoringVersion,
-    pub servers: Role<MonitoringConfig>,
+    pub pod: Role<PodMonitoringConfig>,
+    pub node: Role<NodeMonitoringConfig>,
+    pub cluster: Role<PodMonitoringConfig>,
 }
 
 // TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MonitoringConfig {
+pub struct PodMonitoringConfig {
     pub web_ui_port: Option<u16>,
     pub scrape_interval: Option<String>,
     pub scrape_timeout: Option<String>,
@@ -47,7 +52,7 @@ pub struct MonitoringConfig {
     pub scheme: Option<String>,
 }
 
-impl Configuration for MonitoringConfig {
+impl Configuration for PodMonitoringConfig {
     type Configurable = MonitoringCluster;
 
     fn compute_env(
@@ -103,6 +108,49 @@ impl Configuration for MonitoringConfig {
         }
 
         Ok(result)
+    }
+}
+
+// TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeMonitoringConfig {
+    pub metrics_port: Option<u16>,
+}
+
+impl Configuration for NodeMonitoringConfig {
+    type Configurable = MonitoringCluster;
+
+    fn compute_env(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_cli(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        let mut result = BTreeMap::new();
+        if let Some(metrics_port) = self.metrics_port {
+            result.insert(
+                NODE_METRICS_PORT.to_string(),
+                Some(metrics_port.to_string()),
+            );
+        }
+        Ok(result)
+    }
+
+    fn compute_files(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+        _file: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
     }
 }
 
