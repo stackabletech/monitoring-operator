@@ -1,13 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
+    /// The global configuration specifies parameters that are valid in all other configuration
+    /// contexts. They also serve as defaults for other configuration sections.
     pub global: Global,
+    /// A list of scrape configurations.
     pub scrape_configs: Vec<ScrapeJob>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Global {
     /// How frequently to scrape targets from this job.
     pub scrape_interval: Option<String>,
@@ -19,7 +22,7 @@ pub struct Global {
     pub scrape_configs: Option<Vec<ScrapeJob>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ScrapeJob {
     /// The job name assigned to scraped metrics by default.
     pub job_name: String,
@@ -51,14 +54,14 @@ pub struct ScrapeJob {
     pub relabel_configs: Option<Vec<RelabelConfig>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicAuth {
     pub username: String,
     pub password: Option<String>,
     pub password_file: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {
     /// Sets the authentication type of the request.
     #[serde(rename = "type")]
@@ -71,7 +74,7 @@ pub struct Authorization {
     pub credentials_file: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OAuth2 {
     pub client_id: String,
     pub client_secret: Option<String>,
@@ -86,7 +89,7 @@ pub struct OAuth2 {
     pub endpoint_params: Option<HashMap<String, Option<String>>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TlsConfig {
     /// CA certificate to validate API server certificate with.
     pub ca_file: Option<String>,
@@ -100,7 +103,7 @@ pub struct TlsConfig {
     pub insecure_skip_verify: Option<bool>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct KubernetesSdConfig {
     /// The API server addresses. If left empty, Prometheus is assumed to run inside
     /// of the cluster and will discover API servers automatically and use the pod's
@@ -144,12 +147,12 @@ pub struct KubernetesSdConfig {
     pub selectors: Option<Vec<Selector>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Namespace {
     pub names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Selector {
     pub role: String,
     pub label: Option<String>,
@@ -166,7 +169,13 @@ pub enum KubernetesSdConfigRole {
     Service,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+impl Default for KubernetesSdConfigRole {
+    fn default() -> Self {
+        Self::Pod
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StaticSdConfig {
     /// The targets specified by the static config.
     pub targets: Option<Vec<String>>,
@@ -174,7 +183,7 @@ pub struct StaticSdConfig {
     pub labels: Option<HashMap<String, String>>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RelabelConfig {
     /// The source labels select values from existing labels. Their content is concatenated
     /// using the configured separator and matched against the configured regular expression
@@ -217,6 +226,12 @@ pub enum Action {
     LabelDrop,
     /// Match regex against all label names. Any label that does not match will be removed from the set of labels.
     LabelKeep,
+}
+
+impl Default for Action {
+    fn default() -> Self {
+        Self::Replace
+    }
 }
 
 #[cfg(test)]
