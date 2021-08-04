@@ -1,4 +1,5 @@
 mod error;
+mod prometheus;
 
 use crate::error::Error;
 
