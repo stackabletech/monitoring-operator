@@ -24,8 +24,8 @@ pub enum Error {
     #[error("Invalid Configmap. No name found which is required to query the ConfigMap.")]
     InvalidConfigMap,
 
-    #[error("Pod contains invalid id: {source}")]
-    InvalidId {
+    #[error("Error occurred while paring int: {source}")]
+    ParseIntError {
         #[from]
         source: ParseIntError,
     },

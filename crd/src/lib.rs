@@ -20,7 +20,7 @@ pub const PROM_EVALUATION_INTERVAL: &str = "evaluationInterval";
 pub const PROM_WEB_UI_PORT: &str = "webUiPort";
 pub const PROM_SCHEME: &str = "scheme";
 // node metrics level
-pub const NODE_METRICS_PORT: &str = "metricsPort";
+pub const NODE_METRICS_PORT: &str = "nodeMetricsPort";
 
 // TODO: We need to validate the name of the cluster because it is used in pod and configmap names, it can't bee too long
 // This probably also means we shouldn't use the node_names in the pod_name...
@@ -34,11 +34,12 @@ pub const NODE_METRICS_PORT: &str = "metricsPort";
     namespaced
 )]
 #[kube(status = "MonitoringClusterStatus")]
+#[serde(rename_all = "camelCase")]
 pub struct MonitoringClusterSpec {
     pub version: MonitoringVersion,
-    pub pod: Role<PodMonitoringConfig>,
-    pub node: Role<NodeMonitoringConfig>,
-    pub cluster: Role<PodMonitoringConfig>,
+    pub node_pods: Role<PodMonitoringConfig>,
+    pub node: Option<Role<NodeMonitoringConfig>>,
+    pub federation: Option<Role<PodMonitoringConfig>>,
 }
 
 // TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
@@ -116,6 +117,9 @@ impl Configuration for PodMonitoringConfig {
 #[serde(rename_all = "camelCase")]
 pub struct NodeMonitoringConfig {
     pub metrics_port: Option<u16>,
+    // TODO: should the customer be able to set this?
+    //pub node_exporter_version: String,
+    pub node_exporter_args: Vec<String>,
 }
 
 impl Configuration for NodeMonitoringConfig {
@@ -187,6 +191,14 @@ pub enum MonitoringVersion {
     #[serde(rename = "2.28.1")]
     #[strum(serialize = "2.28.1")]
     v2_28_1,
+}
+
+impl MonitoringVersion {
+    pub fn node_exporter(&self) -> &'static str {
+        match self {
+            MonitoringVersion::v2_28_1 => "1.2.0",
+        }
+    }
 }
 
 impl MonitoringVersion {

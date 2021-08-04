@@ -25,7 +25,7 @@ properties:
       defaultValues:
         - value: "9090"
       roles:
-        - name: "pod"
+        - name: "nodepods"
           required: true
         - name: "cluster"
           required: true
@@ -44,7 +44,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "pod"
+        - name: "nodepods"
           required: false
         - name: "cluster"
           required: false
@@ -63,7 +63,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "pod"
+        - name: "nodepods"
           required: false
         - name: "cluster"
           required: false
@@ -82,7 +82,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "pod"
+        - name: "nodepods"
           required: false
         - name: "cluster"
           required: false
@@ -103,16 +103,16 @@ properties:
         - http
         - https
       roles:
-        - name: "pod"
+        - name: "nodepods"
           required: false
         - name: "cluster"
           required: false
       asOfVersion: "0.0.0"
       description: "Configures the protocol scheme used for requests."
 
-  - property: &metricsPort
+  - property: &nodeMetricsPort
       propertyNames:
-        - name: "metricsPort"
+        - name: "nodeMetricsPort"
           kind:
             type: "cli"
       datatype:

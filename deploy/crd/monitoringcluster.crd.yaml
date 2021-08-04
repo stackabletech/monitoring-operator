@@ -20,7 +20,8 @@ spec:
           properties:
             spec:
               properties:
-                cluster:
+                federation:
+                  nullable: true
                   properties:
                     cliOverrides:
                       additionalProperties:
@@ -144,6 +145,7 @@ spec:
                     - roleGroups
                   type: object
                 node:
+                  nullable: true
                   properties:
                     cliOverrides:
                       additionalProperties:
@@ -158,6 +160,12 @@ spec:
                           minimum: 0.0
                           nullable: true
                           type: integer
+                        nodeExporterArgs:
+                          items:
+                            type: string
+                          type: array
+                      required:
+                        - nodeExporterArgs
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -187,6 +195,12 @@ spec:
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
+                              nodeExporterArgs:
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                              - nodeExporterArgs
                             type: object
                           configOverrides:
                             additionalProperties:
@@ -242,7 +256,7 @@ spec:
                   required:
                     - roleGroups
                   type: object
-                pod:
+                nodePods:
                   properties:
                     cliOverrides:
                       additionalProperties:
@@ -370,9 +384,7 @@ spec:
                     - 2.28.1
                   type: string
               required:
-                - cluster
-                - node
-                - pod
+                - nodePods
                 - version
               type: object
             status:

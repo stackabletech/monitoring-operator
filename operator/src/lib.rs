@@ -3,7 +3,7 @@ mod error;
 use crate::error::Error;
 
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
+use k8s_openapi::api::core::v1::{ConfigMap, ContainerPort, EnvVar, Pod};
 use kube::api::{ListParams, ResourceExt};
 use kube::Api;
 use serde_json::json;
@@ -15,8 +15,8 @@ use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringVersion, APP_NAME,
-    PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
-    PROM_WEB_UI_PORT,
+    NODE_METRICS_PORT, PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL,
+    PROM_SCRAPE_TIMEOUT, PROM_WEB_UI_PORT,
 };
 use stackable_operator::builder::{
     ConfigMapBuilder, ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
@@ -60,14 +60,95 @@ type MonitoringReconcileResult = ReconcileResult<error::Error>;
 #[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
 pub enum MonitoringRole {
     /// The (pod-level) metrics aggregator. One per node required.
-    #[strum(serialize = "pods")]
-    Pod,
+    #[strum(serialize = "nodepods")]
+    NodePods,
     /// The (node-level) metrics. One per node required.
     #[strum(serialize = "node")]
     Node,
     /// The Federation metrics. One per cluster required.
-    #[strum(serialize = "cluster")]
-    Cluster,
+    #[strum(serialize = "federation")]
+    Federation,
+}
+
+impl MonitoringRole {
+    pub fn image(&self, version: &MonitoringVersion) -> String {
+        match self {
+            MonitoringRole::NodePods | MonitoringRole::Federation => {
+                format!("stackable/prometheus:{}", version.to_string())
+            }
+            MonitoringRole::Node => {
+                format!("node-exporter:{}", version.node_exporter())
+            }
+        }
+    }
+
+    pub fn command(&self, version: &MonitoringVersion) -> Vec<String> {
+        let mut command = vec![];
+        match self {
+            MonitoringRole::NodePods | MonitoringRole::Federation => command.push(format!(
+                "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
+                version.to_string()
+            )),
+            MonitoringRole::Node => command.push(format!(
+                "node_exporter-{}.linux-amd64/node_exporter",
+                version.node_exporter()
+            )),
+        }
+        command
+    }
+
+    pub fn args(&self, port: &str, args: Vec<String>) -> Vec<String> {
+        let mut command = vec![];
+        match self {
+            MonitoringRole::NodePods | MonitoringRole::Federation => {
+                command.push(format!("--web.listen-address=:{}", port));
+                command.push(format!(
+                    "--config.file={{{{configroot}}}}/conf/{}",
+                    PROMETHEUS_CONFIG_YAML
+                ));
+                command.push("--log.level debug".to_string());
+            }
+            MonitoringRole::Node => {
+                // TODO: Can 127.0.0.1 cause problems?
+                command.push(format!("--web.listen-address=127.0.0.1:{}", port));
+                command.extend(args);
+            }
+        }
+        command
+    }
+
+    pub fn container_ports(&self, metrics_port: &str) -> Result<Vec<ContainerPort>, Error> {
+        let mut container_ports = vec![];
+
+        match self {
+            MonitoringRole::NodePods => {
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("metrics")
+                        .build(),
+                );
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("http")
+                        .build(),
+                );
+            }
+            MonitoringRole::Node => container_ports.push(
+                ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                    .name("metrics")
+                    .build(),
+            ),
+            MonitoringRole::Federation => {
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("http")
+                        .build(),
+                );
+            }
+        }
+
+        Ok(container_ports)
+    }
 }
 
 struct MonitoringState {
@@ -426,6 +507,8 @@ impl MonitoringState {
 
                         let (pod, config_maps) = self
                             .create_pod_and_config_maps(
+                                &monitoring_role,
+                                role_group,
                                 node_name,
                                 &pod_name,
                                 pod_labels,
@@ -488,6 +571,8 @@ impl MonitoringState {
     /// container start command and arguments.
     async fn create_pod_and_config_maps(
         &self,
+        role: &MonitoringRole,
+        group: &str,
         node_name: &str,
         pod_name: &str,
         labels: BTreeMap<String, String>,
@@ -495,7 +580,8 @@ impl MonitoringState {
     ) -> Result<(Pod, Vec<ConfigMap>), Error> {
         let mut config_maps = vec![];
         let mut env_vars = vec![];
-        let mut cli_web_ui_port = "9090";
+        // TODO: use product-config default ports?
+        let mut scrape_port = "9090";
 
         let cm_config_name = format!("{}-config", pod_name);
 
@@ -550,40 +636,46 @@ impl MonitoringState {
                     }
                 }
                 PropertyNameKind::Cli => {
-                    if let Some(port) = config.get("webUiPort") {
-                        cli_web_ui_port = port
+                    if let Some(port) = config.get(PROM_WEB_UI_PORT) {
+                        scrape_port = port
+                    } else if let Some(port) = config.get(NODE_METRICS_PORT) {
+                        scrape_port = port
                     }
                 }
             }
         }
 
-        let version = &self.context.resource.spec.version.to_string();
+        let version = &self.context.resource.spec.version;
 
-        let mut container_builder = ContainerBuilder::new("monitoring");
-        container_builder.image(format!("stackable/prometheus:{}", version.to_string()));
-        container_builder.command(vec![
-            format!(
-                "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
-                version.to_string()
-            ),
-            format!(
-                "--config.file={{{{configroot}}}}/conf/{}",
-                PROMETHEUS_CONFIG_YAML
-            ),
-            "--log.level debug".to_string(),
-            // TODO: Enable admin api? Make configurable.
-            "--web.enable-admin-api".to_string(),
-            format!("--web.listen-address=:{}", cli_web_ui_port),
-        ]);
-        // One mount for the config directory, this will be relative to the extracted package
-        container_builder.add_configmapvolume(cm_config_name, "conf".to_string());
-        container_builder.add_env_vars(env_vars);
-        // Expose the web ui port as container port
-        container_builder.add_container_port(
-            ContainerPortBuilder::new(cli_web_ui_port.parse::<u16>()?)
-                .name(PROM_WEB_UI_PORT.to_lowercase())
-                .build(),
-        );
+        let exporter_args = &self
+            .context
+            .resource
+            .spec
+            .node
+            .as_ref()
+            .unwrap()
+            .role_groups
+            .get(group)
+            .as_ref()
+            .unwrap()
+            .config
+            .as_ref()
+            .unwrap()
+            .config
+            .as_ref()
+            .unwrap()
+            .node_exporter_args;
+
+        let mut cb = ContainerBuilder::new("monitoring");
+        cb.image(role.image(version));
+        cb.command(role.command(version));
+        cb.args(role.args(scrape_port, exporter_args.to_vec()));
+
+        if role != &MonitoringRole::Node {
+            cb.add_configmapvolume(cm_config_name, "conf".to_string());
+        }
+        cb.add_env_vars(env_vars);
+        cb.add_container_ports(role.container_ports(scrape_port)?);
 
         let pod = PodBuilder::new()
             .metadata(
@@ -595,7 +687,7 @@ impl MonitoringState {
                     .build()?,
             )
             .add_stackable_agent_tolerations()
-            .add_container(container_builder.build())
+            .add_container(cb.build())
             .node_name(node_name)
             .build()?;
 
@@ -691,47 +783,57 @@ impl ControllerStrategy for MonitoringStrategy {
         let mut eligible_nodes = HashMap::new();
 
         eligible_nodes.insert(
-            MonitoringRole::Pod.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.pod).await?,
+            MonitoringRole::NodePods.to_string(),
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.node_pods)
+                .await?,
         );
 
-        eligible_nodes.insert(
-            MonitoringRole::Node.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.node).await?,
-        );
+        if let Some(node) = &spec.node {
+            eligible_nodes.insert(
+                MonitoringRole::Node.to_string(),
+                role_utils::find_nodes_that_fit_selectors(&context.client, None, node).await?,
+            );
+        }
 
-        eligible_nodes.insert(
-            MonitoringRole::Cluster.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.cluster).await?,
-        );
+        if let Some(federation) = &spec.federation {
+            eligible_nodes.insert(
+                MonitoringRole::Federation.to_string(),
+                role_utils::find_nodes_that_fit_selectors(&context.client, None, federation)
+                    .await?,
+            );
+        }
 
         let mut roles = HashMap::new();
         roles.insert(
-            MonitoringRole::Pod.to_string(),
+            MonitoringRole::NodePods.to_string(),
             (
                 vec![
                     PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
                     PropertyNameKind::Cli,
                 ],
-                spec.pod.clone().into(),
+                spec.node_pods.clone().into(),
             ),
         );
 
-        roles.insert(
-            MonitoringRole::Node.to_string(),
-            (vec![PropertyNameKind::Cli], spec.node.clone().into()),
-        );
+        if let Some(node) = spec.node {
+            roles.insert(
+                MonitoringRole::Node.to_string(),
+                (vec![PropertyNameKind::Cli], node.into()),
+            );
+        }
 
-        roles.insert(
-            MonitoringRole::Cluster.to_string(),
-            (
-                vec![
-                    PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
-                    PropertyNameKind::Cli,
-                ],
-                spec.node.clone().into(),
-            ),
-        );
+        if let Some(federation) = spec.federation {
+            roles.insert(
+                MonitoringRole::Federation.to_string(),
+                (
+                    vec![
+                        PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
+                        PropertyNameKind::Cli,
+                    ],
+                    federation.into(),
+                ),
+            );
+        }
 
         let role_config = transform_all_roles_to_config(&context.resource, roles);
         let validated_role_config = validate_all_roles_and_groups_config(
