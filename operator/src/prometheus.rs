@@ -330,7 +330,18 @@ scrape_configs:
         target_label: kubernetes_pod_controller_kind
       - source_labels: [__meta_kubernetes_pod_controller_name]
         action: replace
-        target_label: kubernetes_pod_controller_name";
+        target_label: kubernetes_pod_controller_name
+{{#if with_node_scraper}}
+  - job_name: node
+    scrape_interval: 60s
+    static_config:
+      targets:
+        - localhost:9100
+      scheme: http
+      labels:
+        node_id: this_server
+{{/#if}}
+ ";
 
 impl ConfigManager {
     /// Create a ProductConfig from a YAML file.
@@ -389,6 +400,7 @@ pub struct NodepodsTemplateDataBuilder {
     scrape_configs_k8s_scheme: String,
     scrape_configs_k8s_namespace: String,
     scrape_configs_k8s_selector_node_name: String,
+    with_node_scraper: bool,
 }
 
 impl NodepodsTemplateDataBuilder {
@@ -400,6 +412,7 @@ impl NodepodsTemplateDataBuilder {
             scrape_configs_k8s_scheme: "https".to_string(),
             scrape_configs_k8s_namespace: namespace.to_string(),
             scrape_configs_k8s_selector_node_name: name.to_string(),
+            with_node_scraper: false,
         }
     }
 
