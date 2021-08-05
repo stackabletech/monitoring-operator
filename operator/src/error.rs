@@ -3,6 +3,15 @@ use std::num::ParseIntError;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("File not found: {file_name}")]
+    FileNotFound { file_name: String },
+
+    #[error("Could not parse yaml file - {file}: {reason}")]
+    YamlFileNotParsable { file: String, reason: String },
+
+    #[error("Could not parse yaml - {content}: {reason}")]
+    YamlNotParsable { content: String, reason: String },
+
     #[error("Kubernetes reported error: {source}")]
     KubeError {
         #[from]

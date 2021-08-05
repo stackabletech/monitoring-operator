@@ -1,5 +1,8 @@
+use crate::error;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
+use std::{fs, str};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
@@ -234,8 +237,57 @@ impl Default for Action {
     }
 }
 
+pub struct ConfigManager {
+    config: Config,
+}
+
+impl FromStr for ConfigManager {
+    type Err = error::Error;
+    /// Create a ProductConfig from a YAML string.
+    ///
+    /// # Arguments
+    ///
+    /// * `contents` - the YAML string content
+    fn from_str(contents: &str) -> Result<Self, error::Error> {
+        Ok(ConfigManager {
+            config: serde_yaml::from_str(contents).map_err(|serde_error| {
+                error::Error::YamlNotParsable {
+                    content: contents.to_string(),
+                    reason: serde_error.to_string(),
+                }
+            })?,
+        })
+    }
+}
+
+impl ConfigManager {
+    /// Create a ProductConfig from a YAML file.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_path` - the path to the YAML file
+    pub fn from_yaml_file(file_path: &str) -> Result<Self, error::Error> {
+        let contents = fs::read_to_string(file_path).map_err(|_| error::Error::FileNotFound {
+            file_name: file_path.to_string(),
+        })?;
+
+        Self::from_str(&contents).map_err(|serde_error| error::Error::YamlFileNotParsable {
+            file: file_path.to_string(),
+            reason: serde_error.to_string(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
-    fn test() {}
+    fn test_nodepod_loads_correctly() {
+        let manager = ConfigManager::from_yaml_file("data/test/nodepods.yaml");
+        if let Err(ref e) = manager {
+            println!("{:?}", e)
+        }
+        assert!(manager.is_ok())
+    }
 }
