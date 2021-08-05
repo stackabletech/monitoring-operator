@@ -283,8 +283,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_nodepod_loads_correctly() {
+    fn test_nodepods_config_loads_correctly() {
         let manager = ConfigManager::from_yaml_file("data/test/nodepods.yaml");
+        assert!(manager.is_ok())
+    }
+
+    #[test]
+    fn test_nodepods_and_node_config_loads_correctly() {
+        let manager = ConfigManager::from_yaml_file("data/test/nodepods_and_node.yaml");
         assert!(manager.is_ok())
     }
 }
