@@ -10,6 +10,7 @@ use kube::Api;
 use serde_json::json;
 use tracing::{debug, error, info, trace, warn};
 
+use crate::prometheus::{ConfigManager, NodepodsTemplateDataBuilder};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::error::ErrorResponse;
 use product_config::types::PropertyNameKind;
@@ -593,17 +594,17 @@ impl MonitoringState {
                         continue;
                     }
 
-                    let content = build_prometheus_yaml(
-                        &self.context.client.default_namespace,
-                        node_name,
-                        config.get(PROM_SCRAPE_INTERVAL),
-                        config.get(PROM_SCRAPE_TIMEOUT),
-                        config.get(PROM_EVALUATION_INTERVAL),
-                        config.get(PROM_SCHEME),
-                    );
+                    let content = ConfigManager::from_nodepods_template(
+                        NodepodsTemplateDataBuilder::new_with_namespace_and_node_name(
+                            &self.context.client.default_namespace,
+                            node_name,
+                        )
+                        .with_config(&config)
+                        .build(),
+                    )?;
 
                     let mut cm_config_data = BTreeMap::new();
-                    cm_config_data.insert(file_name.clone(), content);
+                    cm_config_data.insert(file_name.clone(), content.serialize()?);
 
                     config_maps.push(
                         ConfigMapBuilder::new()
@@ -884,97 +885,3 @@ pub async fn create_controller(client: Client) -> OperatorResult<()> {
 
     Ok(())
 }
-
-/// Builds a prometheus yaml configuration file using Kubernetes Service Discovery.
-///
-/// The value 'KUBECONFIG' of the field kubeconfig_file (in kubernetes_sd_configs) will be replaced
-/// by the prometheus-wrapper.sh script with the content of the 'KUBECONFIG' environment variable
-/// set by the agent.
-///
-/// The relabel config checks for "monitoring.stackable.tech/scrape=true" and requires a container
-/// port (to be scraped) and a container port name ("metrics"). This is required for the Service
-/// Discovery. Additionally we relabel all existing pod labels and expose the host ip, pod ip,
-/// controller kind and controller name.
-fn build_prometheus_yaml(
-    namespace: &str,
-    node_name: &str,
-    scrape_interval: Option<&String>,
-    scrape_timeout: Option<&String>,
-    evaluation_interval: Option<&String>,
-    scheme: Option<&String>,
-) -> String {
-    // TODO: change "should_be_scraped" to "scrape"
-    format!("
-global:
-  evaluation_interval: {}
-scrape_configs:
-  - job_name: k8pods
-    scrape_interval: {}
-    scrape_timeout: {}
-    scheme: {}
-    kubernetes_sd_configs:
-      - role: pod
-        kubeconfig_file: KUBECONFIG
-        namespaces:
-          names:
-            - {}
-        selectors:
-          - role: pod
-            field: spec.nodeName={}
-    relabel_configs:
-      # only keep pods that have the \"monitoring.stackable.tech/should_be_scraped = true\" annotation.
-      - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
-        regex: true
-        action: keep
-      # only keep discovered pods with the container_port_name 'metrics'
-      # this avoids to discover other controller_port (e.g. clientPort in ZooKeeper)
-      - source_labels: [__meta_kubernetes_pod_container_port_name]
-        action: keep
-        regex: metrics
-      # do not scrape yourself
-      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-        regex: monitoring
-        action: drop
-      # adapt port to provided pod container port
-      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
-        action: replace
-        regex: ([^:]+)(?::\\d+)?;(\\d+)
-        replacement: $1:$2
-        target_label: __address__
-      # use all provided pod labels
-      - action: labelmap
-        regex: __meta_kubernetes_pod_label_(.+)
-      - source_labels: [__meta_kubernetes_namespace]
-        action: replace
-        target_label: kubernetes_namespace
-      - source_labels: [__meta_kubernetes_pod_name]
-        action: replace
-        target_label: kubernetes_pod_name
-      - source_labels: [__meta_kubernetes_pod_node_name]
-        action: replace
-        target_label: kubernetes_pod_node_name
-      - source_labels: [__meta_kubernetes_pod_host_ip]
-        action: replace
-        target_label: kubernetes_pod_host_ip
-      - source_labels: [__meta_kubernetes_pod_uid]
-        action: replace
-        target_label: kubernetes_pod_uid
-      - source_labels: [__meta_kubernetes_pod_controller_kind]
-        action: replace
-        target_label: kubernetes_pod_controller_kind
-      - source_labels: [__meta_kubernetes_pod_controller_name]
-        action: replace
-        target_label: kubernetes_pod_controller_name", 
-        // TODO: this overwrites defaults from product config
-        //   Need to prepare this file in a better way
-        evaluation_interval.unwrap_or(&"10s".to_string()),
-        scrape_interval.unwrap_or(&"10s".to_string()),
-        scrape_timeout.unwrap_or(&"10s".to_string()),
-        scheme.unwrap_or(&"http".to_string()),
-        namespace,
-        node_name
-    )
-}
-
-#[cfg(test)]
-mod tests {}

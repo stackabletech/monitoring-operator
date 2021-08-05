@@ -3,6 +3,9 @@ use std::num::ParseIntError;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Cannot generate Prometheus configuration: {reason}")]
+    PrometheusConfigCannotBeSerialized { reason: String },
+
     #[error("File not found: {file_name}")]
     FileNotFound { file_name: String },
 

@@ -1,9 +1,14 @@
 use crate::error;
+use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use stackable_monitoring_crd::{
+    PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
+    PROM_WEB_UI_PORT,
+};
+
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::{fs, str};
-
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
     /// The global configuration specifies parameters that are valid in all other configuration
@@ -157,7 +162,7 @@ pub struct Namespace {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Selector {
-    pub role: String,
+    pub role: KubernetesSdConfigRole,
     pub label: Option<String>,
     pub field: Option<String>,
 }
@@ -260,6 +265,62 @@ impl FromStr for ConfigManager {
     }
 }
 
+static NODEPODS_TEMPLATE : &str = "
+global:
+  evaluation_interval: {{global_evaluation_interval}}
+scrape_configs:
+  - job_name: k8pods
+    scrape_interval: {{scrape_configs_k8s_scrape_interval}}
+    scrape_timeout: {{scrape_configs_k8s_scrape_timeout}}
+    scheme: {{scrape_configs_k8s_scheme}}
+    kubernetes_sd_configs:
+      - role: pod
+        kubeconfig_file: KUBECONFIG
+        namespaces:
+          names:
+            - {{scrape_configs_k8s_namespace}}
+        selectors:
+          - role: pod
+            field: spec.nodeName={{scrape_configs_k8s_selector_node_name}}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_monitoring_stackable_tech_should_be_scraped]
+        regex: true
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: metrics
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: monitoring
+        action: drop
+      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
+        action: replace
+        regex: ([^:]+)(?::\\d+)?;(\\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        action: replace
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: kubernetes_pod_name
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        action: replace
+        target_label: kubernetes_pod_node_name
+      - source_labels: [__meta_kubernetes_pod_host_ip]
+        action: replace
+        target_label: kubernetes_pod_host_ip
+      - source_labels: [__meta_kubernetes_pod_uid]
+        action: replace
+        target_label: kubernetes_pod_uid
+      - source_labels: [__meta_kubernetes_pod_controller_kind]
+        action: replace
+        target_label: kubernetes_pod_controller_kind
+      - source_labels: [__meta_kubernetes_pod_controller_name]
+        action: replace
+        target_label: kubernetes_pod_controller_name";
+
 impl ConfigManager {
     /// Create a ProductConfig from a YAML file.
     ///
@@ -275,6 +336,80 @@ impl ConfigManager {
             file: file_path.to_string(),
             reason: serde_error.to_string(),
         })
+    }
+
+    /// Builds a prometheus yaml configuration file using Kubernetes Service Discovery.
+    ///
+    /// The value 'KUBECONFIG' of the field kubeconfig_file (in kubernetes_sd_configs) will be replaced
+    /// by the prometheus-wrapper.sh script with the content of the 'KUBECONFIG' environment variable
+    /// set by the agent.
+    ///
+    /// The relabel config checks for "monitoring.stackable.tech/scrape=true" and requires a container
+    /// port (to be scraped) and a container port name ("metrics"). This is required for the Service
+    /// Discovery. Additionally we relabel all existing pod labels and expose the host ip, pod ip,
+    /// controller kind and controller name.
+    pub fn from_nodepods_template(
+        tdata: &NodepodsTemplateDataBuilder,
+    ) -> Result<Self, error::Error> {
+        let tengine = Handlebars::new();
+        match tengine.render_template(NODEPODS_TEMPLATE, tdata) {
+            Ok(contents) => Self::from_str(contents.as_str()),
+            Err(e) => Err(error::Error::YamlNotParsable {
+                content: "NODEPODS_TEMPLATE".to_string(),
+                reason: e.desc,
+            }),
+        }
+    }
+
+    pub fn serialize(&self) -> Result<String, error::Error> {
+        serde_yaml::to_string(&self.config).map_err(|serde_error| {
+            error::Error::PrometheusConfigCannotBeSerialized {
+                reason: format!("{}", serde_error),
+            }
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct NodepodsTemplateDataBuilder {
+    global_evaluation_interval: String,
+    scrape_configs_k8s_scrape_interval: String,
+    scrape_configs_k8s_scrape_timeout: String,
+    scrape_configs_k8s_scheme: String,
+    scrape_configs_k8s_namespace: String,
+    scrape_configs_k8s_selector_node_name: String,
+}
+
+impl NodepodsTemplateDataBuilder {
+    pub fn new_with_namespace_and_node_name(namespace: &str, name: &str) -> Self {
+        NodepodsTemplateDataBuilder {
+            global_evaluation_interval: "60s".to_string(),
+            scrape_configs_k8s_scrape_interval: "60s".to_string(),
+            scrape_configs_k8s_scrape_timeout: "30s".to_string(),
+            scrape_configs_k8s_scheme: "https".to_string(),
+            scrape_configs_k8s_namespace: namespace.to_string(),
+            scrape_configs_k8s_selector_node_name: name.to_string(),
+        }
+    }
+
+    pub fn with_config(&mut self, config: &BTreeMap<String, String>) -> &mut Self {
+        if let Some(value) = config.get(PROM_EVALUATION_INTERVAL) {
+            self.global_evaluation_interval = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCRAPE_INTERVAL) {
+            self.scrape_configs_k8s_scrape_interval = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCRAPE_TIMEOUT) {
+            self.scrape_configs_k8s_scrape_timeout = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCHEME) {
+            self.scrape_configs_k8s_scheme = value.clone();
+        }
+        self
+    }
+
+    pub fn build(&mut self) -> &Self {
+        self
     }
 }
 
@@ -292,5 +427,28 @@ mod tests {
     fn test_nodepods_and_node_config_loads_correctly() {
         let manager = ConfigManager::from_yaml_file("data/test/nodepods_and_node.yaml");
         assert!(manager.is_ok())
+    }
+
+    #[test]
+    fn test_nodepods_template() {
+        let manager = ConfigManager::from_nodepods_template(
+            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            manager.config.scrape_configs[0]
+                .kubernetes_sd_configs
+                .as_ref()
+                .unwrap()[0]
+                .selectors
+                .as_ref()
+                .unwrap()[0]
+                .field
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            "spec.nodeName=localhost"
+        )
     }
 }
