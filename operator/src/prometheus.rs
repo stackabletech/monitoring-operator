@@ -50,7 +50,7 @@ pub struct ScrapeJob {
     /// Configures the scrape request's TLS settings.
     pub tls_config: Option<TlsConfig>,
     /// List of Kubernetes service discovery configurations.
-    pub kubernetes_sd_configs: Option<KubernetesSdConfig>,
+    pub kubernetes_sd_configs: Option<Vec<KubernetesSdConfig>>,
     /// List of labeled statically configured targets for this job.
     pub static_configs: Option<StaticSdConfig>,
     /// List of target relabel configurations.
@@ -191,7 +191,7 @@ pub struct RelabelConfig {
     /// The source labels select values from existing labels. Their content is concatenated
     /// using the configured separator and matched against the configured regular expression
     /// for the replace, keep, and drop actions.
-    pub source_labels: Option<String>,
+    pub source_labels: Option<Vec<String>>,
     /// Separator placed between concatenated source label values.
     pub separator: Option<String>,
     /// Label to which the resulting value is written in a replace action.
@@ -200,7 +200,7 @@ pub struct RelabelConfig {
     /// Regular expression against which the extracted value is matched.
     pub regex: Option<String>,
     /// Modulus to take of the hash of the source label values.
-    pub modulus: usize,
+    pub modulus: Option<usize>,
     /// Replacement value against which a regex replace is performed if the
     /// regular expression matches. Regex capture groups are available.
     pub replacement: Option<String>,
@@ -285,9 +285,6 @@ mod tests {
     #[test]
     fn test_nodepod_loads_correctly() {
         let manager = ConfigManager::from_yaml_file("data/test/nodepods.yaml");
-        if let Err(ref e) = manager {
-            println!("{:?}", e)
-        }
         assert!(manager.is_ok())
     }
 }
