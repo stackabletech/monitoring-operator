@@ -1,14 +1,14 @@
 use crate::error;
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
+use serde_with_macros::skip_serializing_none;
 use stackable_monitoring_crd::{
     PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
-    PROM_WEB_UI_PORT,
 };
-
 use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 use std::{fs, str};
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
     /// The global configuration specifies parameters that are valid in all other configuration
@@ -18,6 +18,7 @@ pub struct Config {
     pub scrape_configs: Vec<ScrapeJob>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Global {
     /// How frequently to scrape targets from this job.
@@ -30,6 +31,7 @@ pub struct Global {
     pub scrape_configs: Option<Vec<ScrapeJob>>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ScrapeJob {
     /// The job name assigned to scraped metrics by default.
@@ -62,6 +64,7 @@ pub struct ScrapeJob {
     pub relabel_configs: Option<Vec<RelabelConfig>>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicAuth {
     pub username: String,
@@ -69,6 +72,8 @@ pub struct BasicAuth {
     pub password_file: Option<String>,
 }
 
+#[skip_serializing_none]
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {
     /// Sets the authentication type of the request.
@@ -82,6 +87,7 @@ pub struct Authorization {
     pub credentials_file: Option<String>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OAuth2 {
     pub client_id: String,
@@ -97,6 +103,7 @@ pub struct OAuth2 {
     pub endpoint_params: Option<HashMap<String, Option<String>>>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TlsConfig {
     /// CA certificate to validate API server certificate with.
@@ -111,6 +118,7 @@ pub struct TlsConfig {
     pub insecure_skip_verify: Option<bool>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct KubernetesSdConfig {
     /// The API server addresses. If left empty, Prometheus is assumed to run inside
@@ -160,6 +168,7 @@ pub struct Namespace {
     pub names: Vec<String>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Selector {
     pub role: KubernetesSdConfigRole,
@@ -183,6 +192,7 @@ impl Default for KubernetesSdConfigRole {
     }
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StaticSdConfig {
     /// The targets specified by the static config.
@@ -191,6 +201,7 @@ pub struct StaticSdConfig {
     pub labels: Option<HashMap<String, String>>,
 }
 
+#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RelabelConfig {
     /// The source labels select values from existing labels. Their content is concatenated
@@ -450,5 +461,14 @@ mod tests {
                 .as_str(),
             "spec.nodeName=localhost"
         )
+    }
+    #[test]
+    fn test_serialize() {
+        let manager = ConfigManager::from_nodepods_template(
+            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost"),
+        )
+        .unwrap();
+        let yaml = manager.serialize();
+        assert!(yaml.is_ok())
     }
 }

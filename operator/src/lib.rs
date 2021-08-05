@@ -17,8 +17,7 @@ use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringVersion, APP_NAME,
-    NODE_METRICS_PORT, PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL,
-    PROM_SCRAPE_TIMEOUT, PROM_WEB_UI_PORT,
+    NODE_METRICS_PORT, PROM_WEB_UI_PORT,
 };
 use stackable_operator::builder::{
     ConfigMapBuilder, ContainerBuilder, ContainerPortBuilder, ObjectMetaBuilder, PodBuilder,
@@ -599,7 +598,7 @@ impl MonitoringState {
                             &self.context.client.default_namespace,
                             node_name,
                         )
-                        .with_config(&config)
+                        .with_config(config)
                         .build(),
                     )?;
 
