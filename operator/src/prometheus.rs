@@ -73,7 +73,6 @@ pub struct BasicAuth {
 }
 
 #[skip_serializing_none]
-#[skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Authorization {
     /// Sets the authentication type of the request.
