@@ -59,7 +59,7 @@ pub struct ScrapeJob {
     /// List of Kubernetes service discovery configurations.
     pub kubernetes_sd_configs: Option<Vec<KubernetesSdConfig>>,
     /// List of labeled statically configured targets for this job.
-    pub static_configs: Option<StaticSdConfig>,
+    pub static_configs: Option<Vec<StaticSdConfig>>,
     /// List of target relabel configurations.
     pub relabel_configs: Option<Vec<RelabelConfig>>,
 }
@@ -280,7 +280,7 @@ static NODEPODS_TEMPLATE : &str = "
 global:
   evaluation_interval: {{global_evaluation_interval}}
 scrape_configs:
-  - job_name: k8pods
+  - job_name: nodepods
     scrape_interval: {{scrape_configs_k8s_scrape_interval}}
     scrape_timeout: {{scrape_configs_k8s_scrape_timeout}}
     scheme: {{scrape_configs_k8s_scheme}}
@@ -333,14 +333,13 @@ scrape_configs:
         target_label: kubernetes_pod_controller_name
 {{#if with_node_scraper}}
   - job_name: node
-    scrape_interval: 60s
-    static_config:
-      targets:
-        - localhost:9100
-      scheme: http
-      labels:
-        node_id: this_server
-{{/#if}}
+    scrape_interval: {{scrape_configs_k8s_scrape_interval}}
+    static_configs:
+      - targets:
+        - localhost:{{node_exporter_metrics_port}}
+        labels:
+          node_id: this_server
+{{/if}}
  ";
 
 impl ConfigManager {
@@ -349,6 +348,7 @@ impl ConfigManager {
     /// # Arguments
     ///
     /// * `file_path` - the path to the YAML file
+    #[allow(dead_code)]
     pub fn from_yaml_file(file_path: &str) -> Result<Self, error::Error> {
         let contents = fs::read_to_string(file_path).map_err(|_| error::Error::FileNotFound {
             file_name: file_path.to_string(),
@@ -400,6 +400,7 @@ pub struct NodepodsTemplateDataBuilder {
     scrape_configs_k8s_scheme: String,
     scrape_configs_k8s_namespace: String,
     scrape_configs_k8s_selector_node_name: String,
+    node_exporter_metrics_port: String,
     with_node_scraper: bool,
 }
 
@@ -412,8 +413,17 @@ impl NodepodsTemplateDataBuilder {
             scrape_configs_k8s_scheme: "https".to_string(),
             scrape_configs_k8s_namespace: namespace.to_string(),
             scrape_configs_k8s_selector_node_name: name.to_string(),
+            node_exporter_metrics_port: "9100".to_string(),
             with_node_scraper: false,
         }
+    }
+
+    pub fn with_node_exporter(&mut self, metrics_port: Option<u16>) -> &mut Self {
+        if let Some(port) = metrics_port {
+            self.node_exporter_metrics_port = port.to_string();
+            self.with_node_scraper = true;
+        }
+        self
     }
 
     pub fn with_config(&mut self, config: &BTreeMap<String, String>) -> &mut Self {

@@ -593,12 +593,18 @@ impl MonitoringState {
                         continue;
                     }
 
+                    // extract node_exporter_metrics_port from node -> group -> config
+
+                    let node_exporter_metrics_port =
+                        self.context.resource.spec.node_exporter_metrics_port(group);
+
                     let content = ConfigManager::from_nodepods_template(
                         NodepodsTemplateDataBuilder::new_with_namespace_and_node_name(
                             &self.context.client.default_namespace,
                             node_name,
                         )
                         .with_config(config)
+                        .with_node_exporter(node_exporter_metrics_port)
                         .build(),
                     )?;
 
@@ -648,29 +654,12 @@ impl MonitoringState {
 
         let version = &self.context.resource.spec.version;
 
-        let exporter_args = &self
-            .context
-            .resource
-            .spec
-            .node
-            .as_ref()
-            .unwrap()
-            .role_groups
-            .get(group)
-            .as_ref()
-            .unwrap()
-            .config
-            .as_ref()
-            .unwrap()
-            .config
-            .as_ref()
-            .unwrap()
-            .node_exporter_args;
+        let node_exporter_args = self.context.resource.spec.node_exporter_args(group);
 
         let mut cb = ContainerBuilder::new("monitoring");
         cb.image(role.image(version));
         cb.command(role.command(version));
-        cb.args(role.args(scrape_port, exporter_args.to_vec()));
+        cb.args(role.args(scrape_port, node_exporter_args));
 
         if role != &MonitoringRole::Node {
             cb.add_configmapvolume(cm_config_name, "conf".to_string());
