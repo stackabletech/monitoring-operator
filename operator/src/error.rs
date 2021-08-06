@@ -3,6 +3,18 @@ use std::num::ParseIntError;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Cannot generate Prometheus configuration: {reason}")]
+    PrometheusConfigCannotBeSerialized { reason: String },
+
+    #[error("File not found: {file_name}")]
+    FileNotFound { file_name: String },
+
+    #[error("Could not parse yaml file - {file}: {reason}")]
+    YamlFileNotParsable { file: String, reason: String },
+
+    #[error("Could not parse yaml - {content}: {reason}")]
+    YamlNotParsable { content: String, reason: String },
+
     #[error("Kubernetes reported error: {source}")]
     KubeError {
         #[from]
@@ -24,8 +36,8 @@ pub enum Error {
     #[error("Invalid Configmap. No name found which is required to query the ConfigMap.")]
     InvalidConfigMap,
 
-    #[error("Pod contains invalid id: {source}")]
-    InvalidId {
+    #[error("Error occurred while parsing int: {source}")]
+    ParseIntError {
         #[from]
         source: ParseIntError,
     },

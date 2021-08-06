@@ -6,18 +6,21 @@ use schemars::JsonSchema;
 use semver::{Error as SemVerError, Version};
 use serde::{Deserialize, Serialize};
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
-use stackable_operator::role_utils::Role;
+use stackable_operator::role_utils::{CommonConfiguration, Role, RoleGroup};
 use stackable_operator::status::Conditions;
 use std::collections::BTreeMap;
 
 pub const APP_NAME: &str = "monitoring";
 pub const MANAGED_BY: &str = "monitoring-operator";
 
+// pod and cluster (federation) metrics level
 pub const PROM_SCRAPE_INTERVAL: &str = "scrapeInterval";
 pub const PROM_SCRAPE_TIMEOUT: &str = "scrapeTimeout";
 pub const PROM_EVALUATION_INTERVAL: &str = "evaluationInterval";
 pub const PROM_WEB_UI_PORT: &str = "webUiPort";
 pub const PROM_SCHEME: &str = "scheme";
+// node metrics level
+pub const NODE_METRICS_PORT: &str = "nodeMetricsPort";
 
 // TODO: We need to validate the name of the cluster because it is used in pod and configmap names, it can't bee too long
 // This probably also means we shouldn't use the node_names in the pod_name...
@@ -31,15 +34,60 @@ pub const PROM_SCHEME: &str = "scheme";
     namespaced
 )]
 #[kube(status = "MonitoringClusterStatus")]
+#[serde(rename_all = "camelCase")]
 pub struct MonitoringClusterSpec {
     pub version: MonitoringVersion,
-    pub servers: Role<MonitoringConfig>,
+    pub node_pods: Role<PodMonitoringConfig>,
+    pub node: Option<Role<NodeMonitoringConfig>>,
+    pub federation: Option<Role<PodMonitoringConfig>>,
+}
+
+impl MonitoringClusterSpec {
+    /// Extract the metrics_port for a given role_group and node_exporter role (MonitoringRole::Node).
+    ///
+    /// # Arguments
+    /// * `role_group` - The role_group where to search for the metrics_port.
+    pub fn node_exporter_metrics_port(&self, role_group: &str) -> Option<u16> {
+        if let Some(Role { role_groups, .. }) = &self.node {
+            if let Some(RoleGroup {
+                config:
+                    Some(CommonConfiguration {
+                        config: Some(conf), ..
+                    }),
+                ..
+            }) = role_groups.get(role_group)
+            {
+                return conf.metrics_port;
+            }
+        }
+        None
+    }
+
+    /// Extract the node_exporter_args for a given role_group and node_exporter role (MonitoringRole::Node).
+    ///
+    /// # Arguments
+    /// * `role_group` - The role_group where to search for the metrics_port.
+    pub fn node_exporter_args(&self, group: &str) -> Vec<String> {
+        if let Some(Role { role_groups, .. }) = &self.node {
+            if let Some(RoleGroup {
+                config:
+                    Some(CommonConfiguration {
+                        config: Some(conf), ..
+                    }),
+                ..
+            }) = role_groups.get(group)
+            {
+                return conf.node_exporter_args.clone();
+            }
+        }
+        vec![]
+    }
 }
 
 // TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
 #[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MonitoringConfig {
+pub struct PodMonitoringConfig {
     pub web_ui_port: Option<u16>,
     pub scrape_interval: Option<String>,
     pub scrape_timeout: Option<String>,
@@ -47,7 +95,7 @@ pub struct MonitoringConfig {
     pub scheme: Option<String>,
 }
 
-impl Configuration for MonitoringConfig {
+impl Configuration for PodMonitoringConfig {
     type Configurable = MonitoringCluster;
 
     fn compute_env(
@@ -106,6 +154,52 @@ impl Configuration for MonitoringConfig {
     }
 }
 
+// TODO: These all should be "Property" Enums that can be either simple or complex where complex allows forcing/ignoring errors and/or warnings
+#[derive(Clone, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeMonitoringConfig {
+    pub metrics_port: Option<u16>,
+    // TODO: should the customer be able to set this?
+    //pub node_exporter_version: String,
+    pub node_exporter_args: Vec<String>,
+}
+
+impl Configuration for NodeMonitoringConfig {
+    type Configurable = MonitoringCluster;
+
+    fn compute_env(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+
+    fn compute_cli(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        let mut result = BTreeMap::new();
+        if let Some(metrics_port) = self.metrics_port {
+            result.insert(
+                NODE_METRICS_PORT.to_string(),
+                Some(metrics_port.to_string()),
+            );
+        }
+        Ok(result)
+    }
+
+    fn compute_files(
+        &self,
+        _resource: &Self::Configurable,
+        _role_name: &str,
+        _file: &str,
+    ) -> Result<BTreeMap<String, Option<String>>, ConfigError> {
+        Ok(BTreeMap::new())
+    }
+}
+
 impl Conditions for MonitoringCluster {
     fn conditions(&self) -> Option<&[Condition]> {
         if let Some(status) = &self.status {
@@ -139,6 +233,14 @@ pub enum MonitoringVersion {
     #[serde(rename = "2.28.1")]
     #[strum(serialize = "2.28.1")]
     v2_28_1,
+}
+
+impl MonitoringVersion {
+    pub fn node_exporter(&self) -> &'static str {
+        match self {
+            MonitoringVersion::v2_28_1 => "1.2.0",
+        }
+    }
 }
 
 impl MonitoringVersion {

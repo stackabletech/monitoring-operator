@@ -11,6 +11,9 @@ Currently, this operator uses Prometheus as a metric aggregator per machine. It 
 It uses Kubernetes Service Discovery to scrape pods belonging to its machine/node.
 Pods that should be scraped need to expose a container port called "metrics" as well as an annotation "monitoring.stackable.tec/should_be_scraped=true".
 
+Additionally, a NodeExporter can be configured to collect metrics of the physical machine itself.
+This NodeExporter should be deployed on every machine where these metrics should be exposed.
+
 == Building
 
 This operator is written in Rust.
@@ -28,19 +31,32 @@ The cluster can be configured via a YAML file. This custom resource specifies th
       name: simple
     spec:
       version: 2.28.1
-      servers:
+      nodePods:
         roleGroups:
           default:
             selector:
               matchLabels:
                 kubernetes.io/arch: stackable-linux
-            replicas: 1
             config:
               webUiPort: 10101
               scrapeInterval: 15s
               scrapeTimeout: 5s
               evaluationInterval: 10s
               scheme: http
+      node:
+        roleGroups:
+          default:
+            selector:
+              matchLabels:
+                kubernetes.io/arch: stackable-linux
+            config:
+              metricsPort: 10102
+              nodeExporterArgs:
+                - "--no-collector.wifi"
+                - "--no-collector.hwmon"
+                - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
+                - "--collector.netclass.ignored-devices=^(veth.*|[a-f0-9]{15})$"
+                - "--collector.netdev.device-exclude=^(veth.*|[a-f0-9]{15})$"
 
 === Structure
 
@@ -75,7 +91,7 @@ There are three levels of configuration:
 === Role & RoleGroup options
 We summarize Role and RoleGroup options. They are the same options for Role and RoleGroup.
 
-==== Server
+==== NodePods
 [cols="1,1,1,1,1"]
 |===
 |Name
@@ -113,6 +129,28 @@ We summarize Role and RoleGroup options. They are the same options for Role and 
 |Configures the protocol scheme used for requests.
 |schema
 |prometheus.yaml
+|===
+
+==== Node
+[cols="1,1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Prometheus/Victoria properties
+|Location
+
+|metricsPort
+|integer
+|Start the Prometheus Node Exporter on a different port (default 9100).
+|--web.listen-address
+|cli
+
+|nodeExporterArgs
+|Array[string]
+|Configuration parameters on what and how to scrape node metrics.
+|
+|cli
 |===
 
 The docs can be found in the `docs` subdirectory, and they are published together with docs for all other Stackable products at https://docs.stackable.tech.

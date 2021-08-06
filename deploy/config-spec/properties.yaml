@@ -25,7 +25,9 @@ properties:
       defaultValues:
         - value: "9090"
       roles:
-        - name: "server"
+        - name: "nodepods"
+          required: true
+        - name: "cluster"
           required: true
       asOfVersion: "0.0.0"
       description: "The port for the WebUi."
@@ -42,7 +44,9 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "server"
+        - name: "nodepods"
+          required: false
+        - name: "cluster"
           required: false
       asOfVersion: "0.0.0"
       description: "How frequently to scrape targets from this job."
@@ -59,7 +63,9 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "server"
+        - name: "nodepods"
+          required: false
+        - name: "cluster"
           required: false
       asOfVersion: "0.0.0"
       description: "How long until a scrape request times out."
@@ -76,7 +82,9 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "server"
+        - name: "nodepods"
+          required: false
+        - name: "cluster"
           required: false
       asOfVersion: "0.0.0"
       description: "How frequently to evaluate rules."
@@ -95,7 +103,27 @@ properties:
         - http
         - https
       roles:
-        - name: "server"
+        - name: "nodepods"
+          required: false
+        - name: "cluster"
           required: false
       asOfVersion: "0.0.0"
       description: "Configures the protocol scheme used for requests."
+
+  - property: &nodeMetricsPort
+      propertyNames:
+        - name: "nodeMetricsPort"
+          kind:
+            type: "cli"
+      datatype:
+        type: "integer"
+        unit: *unitPort
+        min: "1024"
+        max: "65535"
+      defaultValues:
+        - value: "9100"
+      roles:
+        - name: "node"
+          required: true
+      asOfVersion: "0.0.0"
+      description: "The node-exporter metrics port."
