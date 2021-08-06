@@ -4,8 +4,13 @@ After installation, the CRD for this operator must be created:
 
     kubectl apply -f /etc/stackable/monitoring-operator/crd/monitoringcluster.crd.yaml
 
-To create a single node Apache ZooKeeper (v3.5.8) cluster with Prometheus metrics exposed on port 9505:
+The following example creates a monitoring cluster where a Prometheus and a Node Exporter instance is deployed on each node.
 
+Prometheus is configured using the `nodePods` role to scrape all Pods marked with the label `monitoring.stackable.tech/should_be_scraped` **and** that are running
+on the same machine as Prometheus. Properties defined in the `nodePods.roleGroups.default.config` section are applyed to Prometheus.
+
+The role `node` is used to configure the Node Exporter. Metrics are exposed on port `10102` and the `nodeExporterArgs` are passed on to the `node-exporter` executable
+as command line arguments.
 
     cat <<EOF | kubectl apply -f -
     apiVersion: monitoring.stackable.tech/v1alpha1
