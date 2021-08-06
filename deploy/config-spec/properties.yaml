@@ -25,7 +25,7 @@ properties:
       defaultValues:
         - value: "9090"
       roles:
-        - name: "podAggregator"
+        - name: "pod-aggregator"
           required: true
         - name: "federation"
           required: true
@@ -44,7 +44,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "podAggregator"
+        - name: "pod-aggregator"
           required: false
         - name: "federation"
           required: false
@@ -63,7 +63,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "podAggregator"
+        - name: "pod-aggregator"
           required: false
         - name: "federation"
           required: false
@@ -82,7 +82,7 @@ properties:
       defaultValues:
         - value: "10s"
       roles:
-        - name: "podAggregator"
+        - name: "pod-aggregator"
           required: false
         - name: "federation"
           required: false
@@ -103,7 +103,7 @@ properties:
         - http
         - https
       roles:
-        - name: "podAggregator"
+        - name: "pod-aggregator"
           required: false
         - name: "federation"
           required: false
@@ -123,7 +123,7 @@ properties:
       defaultValues:
         - value: "9100"
       roles:
-        - name: "nodeExporter"
+        - name: "node-exporter"
           required: true
       asOfVersion: "0.0.0"
       description: "The node-exporter metrics port."
