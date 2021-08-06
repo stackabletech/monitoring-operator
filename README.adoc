@@ -6,151 +6,22 @@ It is written by https://www.stackable.de[Stackable] in Rust, and it is supposed
 
 The docs can be found in the `docs` subdirectory, and they are published together with docs for all other Stackable products at https://docs.stackable.tech.
 
-Currently, this operator uses Prometheus as a metric aggregator per machine. It may be switched out for the more lightweight VictoriaMetrics. It should be deployed on every machine/node once.
+Currently, this operator uses Prometheus as a metric aggregator per machine ('podAggregator'). It may be switched out for the more lightweight VictoriaMetrics. It should be deployed on every machine/node once.
 
 It uses Kubernetes Service Discovery to scrape pods belonging to its machine/node.
 Pods that should be scraped need to expose a container port called "metrics" as well as an annotation "monitoring.stackable.tec/should_be_scraped=true".
 
-Additionally, a NodeExporter can be configured to collect metrics of the physical machine itself.
+A role 'nodeExporter' can be configured to collect metrics of the physical machine itself.
 This NodeExporter should be deployed on every machine where these metrics should be exposed.
+
+Additionally, a 'federation' role that collects the metrics from each 'podAggregator' and 'nodeExporter' can be defined.
+Usually one federation instance per cluster is sufficient.
 
 == Building
 
 This operator is written in Rust.
-It is developed against the latest Rust release (1.53 at the time of writing this).
+It is developed against the latest Rust release (1.54 at the time of writing this).
 
     cargo build
-
-== Configuration Options
-
-The cluster can be configured via a YAML file. This custom resource specifies the amount of replicas for each role group, role group or role specific configuration like port definition etc.
-
-    apiVersion: monitoring.stackable.tech/v1alpha1
-    kind: MonitoringCluster
-    metadata:
-      name: simple
-    spec:
-      version: 2.28.1
-      nodePods:
-        roleGroups:
-          default:
-            selector:
-              matchLabels:
-                kubernetes.io/arch: stackable-linux
-            config:
-              webUiPort: 10101
-              scrapeInterval: 15s
-              scrapeTimeout: 5s
-              evaluationInterval: 10s
-              scheme: http
-      node:
-        roleGroups:
-          default:
-            selector:
-              matchLabels:
-                kubernetes.io/arch: stackable-linux
-            config:
-              metricsPort: 10102
-              nodeExporterArgs:
-                - "--no-collector.wifi"
-                - "--no-collector.hwmon"
-                - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
-                - "--collector.netclass.ignored-devices=^(veth.*|[a-f0-9]{15})$"
-                - "--collector.netdev.device-exclude=^(veth.*|[a-f0-9]{15})$"
-
-=== Structure
-
-There are three levels of configuration:
-
-[cols="1,1"]
-|===
-|Common shared options
-|Contains configuration that is shared within the whole cluster ensemble. E.g. version, image, encryption or logging.
-
-|Role options
-|This configuration is shared for all roles of a certain type (in this operator, only the Server role).
-
-|RoleGroup options
-|Options provided in the role group apply to each created "pod".
-|===
-
-=== Common shared options
-[cols="1,1,1,1"]
-|===
-|Name
-|Type
-|Description
-|Related Prometheus/Victoria properties
-
-|version
-|string
-|The Monitoring version used in the format: x.y.z
-|
-|===
-
-=== Role & RoleGroup options
-We summarize Role and RoleGroup options. They are the same options for Role and RoleGroup.
-
-==== NodePods
-[cols="1,1,1,1,1"]
-|===
-|Name
-|Type
-|Description
-|Related Prometheus/Victoria properties
-|Location
-
-|webUiPort
-|integer
-|Start the Prometheus / Victoria UI on a different port (default 9090).
-|--web.listen-address
-|cli
-
-|scrapeInterval
-|string
-|How frequently to scrape targets from this job (10s, 1h30m). Must be higher than the scrapeTimeout.
-|scrape_interval
-|prometheus.yaml
-
-|scrapeTimeout
-|string
-|How long until a scrape request times out. (10s, 1h30m). Must be lower than the scrapeInterval.
-|scrape_timeout
-|prometheus.yaml
-
-|evaluationInterval
-|string
-|How frequently to evaluate rules. (10s, 1h30m).
-|evaluation_interval
-|prometheus.yaml
-
-|schema
-|string
-|Configures the protocol scheme used for requests.
-|schema
-|prometheus.yaml
-|===
-
-==== Node
-[cols="1,1,1,1,1"]
-|===
-|Name
-|Type
-|Description
-|Related Prometheus/Victoria properties
-|Location
-
-|metricsPort
-|integer
-|Start the Prometheus Node Exporter on a different port (default 9100).
-|--web.listen-address
-|cli
-
-|nodeExporterArgs
-|Array[string]
-|Configuration parameters on what and how to scrape node metrics.
-|
-|cli
-|===
 
 The docs can be found in the `docs` subdirectory, and they are published together with docs for all other Stackable products at https://docs.stackable.tech.
