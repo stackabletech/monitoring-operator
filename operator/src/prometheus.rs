@@ -597,7 +597,7 @@ impl FederationTemplateDataBuilder {
     /// # Arguments
     /// * `namespace` - The pod/cluster namespace.
     /// * `node_name` - The pod node_name.
-    pub fn new_with_namespace_and_node_name(namespace: &str) -> Self {
+    pub fn new_with_namespace(namespace: &str) -> Self {
         FederationTemplateDataBuilder {
             global_evaluation_interval: "60s".to_string(),
             scrape_configs_k8s_scrape_interval: "60s".to_string(),
@@ -647,19 +647,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_nodepods_config_loads_correctly() {
+    fn test_pod_aggregator_file_loads_correctly() {
         let manager = ConfigManager::from_yaml_file("data/test/nodepods.yaml");
         assert!(manager.is_ok())
     }
 
     #[test]
-    fn test_nodepods_and_node_config_loads_correctly() {
+    fn test_pod_aggregator_with_node_exporter_file_loads_correctly() {
         let manager = ConfigManager::from_yaml_file("data/test/nodepods_and_node.yaml");
         assert!(manager.is_ok())
     }
 
     #[test]
-    fn test_nodepods_template() {
+    fn test_pod_aggregator_template() {
         let manager = ConfigManager::from_pod_aggregator_template(
             &PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
                 "default",
@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn test_nodepods_and_node_template() {
+    fn test_pod_aggregator_with_node_exporter_template() {
         let manager = ConfigManager::from_pod_aggregator_template(
             PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
                 "default",
@@ -706,13 +706,47 @@ mod tests {
             "localhost:9111"
         )
     }
+
     #[test]
-    fn test_serialize() {
+    fn test_federation_template() {
+        let manager = ConfigManager::from_federation_template(
+            &FederationTemplateDataBuilder::new_with_namespace("default"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            manager.config.scrape_configs[0]
+                .kubernetes_sd_configs
+                .as_ref()
+                .unwrap()[0]
+                .selectors
+                .as_ref()
+                .unwrap()[0]
+                .label
+                .as_ref()
+                .unwrap()
+                .as_str(),
+            format!("app.kubernetes.io/component={},app.kubernetes.io/managed-by={},app.kubernetes.io/name={}", MonitoringRole::PodAggregator.to_string(),MANAGED_BY.to_string(), APP_NAME.to_string() )
+        );
+    }
+
+    #[test]
+    fn test_serialize_pod_aggregator() {
         let manager = ConfigManager::from_pod_aggregator_template(
             &PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
                 "default",
                 "localhost",
             ),
+        )
+        .unwrap();
+        let yaml = manager.serialize();
+        assert!(yaml.is_ok())
+    }
+
+    #[test]
+    fn test_serialize_federation() {
+        let manager = ConfigManager::from_federation_template(
+            &FederationTemplateDataBuilder::new_with_namespace("default"),
         )
         .unwrap();
         let yaml = manager.serialize();

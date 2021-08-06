@@ -620,7 +620,7 @@ impl MonitoringState {
                         .serialize()?;
                     } else if &MonitoringRole::Federation == role {
                         content = ConfigManager::from_federation_template(
-                            FederationTemplateDataBuilder::new_with_namespace_and_node_name(
+                            FederationTemplateDataBuilder::new_with_namespace(
                                 &self.context.client.default_namespace,
                             )
                             .with_config(config)
