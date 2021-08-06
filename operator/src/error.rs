@@ -36,7 +36,7 @@ pub enum Error {
     #[error("Invalid Configmap. No name found which is required to query the ConfigMap.")]
     InvalidConfigMap,
 
-    #[error("Error occurred while paring int: {source}")]
+    #[error("Error occurred while parsing int: {source}")]
     ParseIntError {
         #[from]
         source: ParseIntError,
