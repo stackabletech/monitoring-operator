@@ -16,6 +16,9 @@ spec:
           scrapeTimeout: 5s
           evaluationInterval: 10s
           scheme: http
+          cliArgs:
+            - "--storage.tsdb.path={{configroot}}/aggregator_data/"
+            - "--storage.tsdb.retention.time=7d"
   nodeExporter:
     roleGroups:
       default:
@@ -24,7 +27,7 @@ spec:
             kubernetes.io/arch: stackable-linux
         config:
           metricsPort: 10102
-          nodeExporterArgs:
+          cliArgs:
             - "--no-collector.wifi"
             - "--no-collector.hwmon"
             - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
@@ -43,6 +46,9 @@ spec:
           scrapeTimeout: 5s
           evaluationInterval: 10s
           scheme: http
+          cliArgs:
+            - "--storage.tsdb.path={{configroot}}/federation_data/"
+            - "--storage.tsdb.retention.time=30d"
 
 
 

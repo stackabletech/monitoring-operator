@@ -1,14 +1,14 @@
-use std::num::ParseIntError;
-
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Cannot generate Prometheus configuration: {reason}")]
     PrometheusConfigCannotBeSerialized { reason: String },
 
+    #[cfg(test)]
     #[error("File not found: {file_name}")]
     FileNotFound { file_name: String },
 
+    #[cfg(test)]
     #[error("Could not parse yaml file - {file}: {reason}")]
     YamlFileNotParsable { file: String, reason: String },
 
@@ -36,12 +36,6 @@ pub enum Error {
     #[error("Invalid Configmap. No name found which is required to query the ConfigMap.")]
     InvalidConfigMap,
 
-    #[error("Error occurred while parsing int: {source}")]
-    ParseIntError {
-        #[from]
-        source: ParseIntError,
-    },
-
     #[error("Error during reconciliation: {0}")]
     ReconcileError(String),
 
@@ -58,5 +52,11 @@ pub enum Error {
     OperatorConfigError {
         #[from]
         source: stackable_operator::product_config_utils::ConfigError,
+    },
+
+    #[error("CRD module reported error: {source}")]
+    CrdModuleError {
+        #[from]
+        source: stackable_monitoring_crd::error::Error,
     },
 }

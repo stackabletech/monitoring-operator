@@ -1,14 +1,19 @@
 pub mod error;
 
+use error::Error;
+use k8s_openapi::api::core::v1::ContainerPort;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::CustomResource;
 use schemars::JsonSchema;
 use semver::{Error as SemVerError, Version};
 use serde::{Deserialize, Serialize};
+use stackable_operator::builder::ContainerPortBuilder;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::{CommonConfiguration, Role, RoleGroup};
 use stackable_operator::status::Conditions;
 use std::collections::BTreeMap;
+use strum_macros::Display;
+use strum_macros::EnumIter;
 
 pub const APP_NAME: &str = "monitoring";
 pub const MANAGED_BY: &str = "monitoring-operator";
@@ -21,6 +26,7 @@ pub const PROM_WEB_UI_PORT: &str = "webUiPort";
 pub const PROM_SCHEME: &str = "scheme";
 // node metrics level
 pub const NODE_METRICS_PORT: &str = "nodeMetricsPort";
+pub const PROMETHEUS_CONFIG_YAML: &str = "prometheus.yaml";
 
 // TODO: We need to validate the name of the cluster because it is used in pod and configmap names, it can't bee too long
 // This probably also means we shouldn't use the node_names in the pod_name...
@@ -66,18 +72,49 @@ impl MonitoringClusterSpec {
     /// Extract the node_exporter_args for a given role_group and node_exporter role (MonitoringRole::Node).
     ///
     /// # Arguments
+    /// * `role` - The role where to search for the metrics_port.
     /// * `role_group` - The role_group where to search for the metrics_port.
-    pub fn node_exporter_args(&self, group: &str) -> Vec<String> {
-        if let Some(Role { role_groups, .. }) = &self.node_exporter {
-            if let Some(RoleGroup {
-                config:
-                    Some(CommonConfiguration {
-                        config: Some(conf), ..
-                    }),
-                ..
-            }) = role_groups.get(group)
-            {
-                return conf.node_exporter_args.clone();
+    pub fn node_exporter_args(&self, role: &MonitoringRole, group: &str) -> Vec<String> {
+        match role {
+            MonitoringRole::PodAggregator => {
+                if let Some(RoleGroup {
+                    config:
+                        Some(CommonConfiguration {
+                            config: Some(conf), ..
+                        }),
+                    ..
+                }) = &self.pod_aggregator.role_groups.get(group)
+                {
+                    return conf.cli_args.clone();
+                }
+            }
+            MonitoringRole::NodeExporter => {
+                if let Some(Role { role_groups, .. }) = &self.node_exporter {
+                    if let Some(RoleGroup {
+                        config:
+                            Some(CommonConfiguration {
+                                config: Some(conf), ..
+                            }),
+                        ..
+                    }) = role_groups.get(group)
+                    {
+                        return conf.cli_args.clone();
+                    }
+                }
+            }
+            MonitoringRole::Federation => {
+                if let Some(Role { role_groups, .. }) = &self.federation {
+                    if let Some(RoleGroup {
+                        config:
+                            Some(CommonConfiguration {
+                                config: Some(conf), ..
+                            }),
+                        ..
+                    }) = role_groups.get(group)
+                    {
+                        return conf.cli_args.clone();
+                    }
+                }
             }
         }
         vec![]
@@ -93,6 +130,7 @@ pub struct PodMonitoringConfig {
     pub scrape_timeout: Option<String>,
     pub evaluation_interval: Option<String>,
     pub scheme: Option<String>,
+    pub cli_args: Vec<String>,
 }
 
 impl Configuration for PodMonitoringConfig {
@@ -159,9 +197,7 @@ impl Configuration for PodMonitoringConfig {
 #[serde(rename_all = "camelCase")]
 pub struct NodeMonitoringConfig {
     pub metrics_port: Option<u16>,
-    // TODO: should the customer be able to set this?
-    //pub node_exporter_version: String,
-    pub node_exporter_args: Vec<String>,
+    pub cli_args: Vec<String>,
 }
 
 impl Configuration for NodeMonitoringConfig {
@@ -214,6 +250,105 @@ impl Conditions for MonitoringCluster {
             return &mut self.status.as_mut().unwrap().conditions;
         }
         return &mut self.status.as_mut().unwrap().conditions;
+    }
+}
+
+#[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
+pub enum MonitoringRole {
+    /// The (pod-level) metrics aggregator. One per node required.
+    #[strum(serialize = "pod-aggregator")]
+    PodAggregator,
+    /// The (node-level) metrics. One per node required.
+    #[strum(serialize = "node-exporter")]
+    NodeExporter,
+    /// The Federation metrics. One per cluster required.
+    #[strum(serialize = "federation")]
+    Federation,
+}
+
+impl MonitoringRole {
+    pub fn image(&self, version: &MonitoringVersion) -> String {
+        match self {
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => {
+                format!("stackable/prometheus:{}", version.to_string())
+            }
+            MonitoringRole::NodeExporter => {
+                format!("node-exporter:{}", version.node_exporter())
+            }
+        }
+    }
+
+    pub fn command(&self, version: &MonitoringVersion) -> Vec<String> {
+        let mut command = vec![];
+        match self {
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => command.push(format!(
+                "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
+                version.to_string()
+            )),
+            MonitoringRole::NodeExporter => command.push(format!(
+                "node_exporter-{}.linux-amd64/node_exporter",
+                version.node_exporter()
+            )),
+        }
+        command
+    }
+
+    pub fn args(&self, port: &str, args: Vec<String>) -> Vec<String> {
+        let mut command = vec![];
+        match self {
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => {
+                command.push(format!("--web.listen-address=:{}", port));
+                command.push(format!(
+                    "--config.file={{{{configroot}}}}/conf/{}",
+                    PROMETHEUS_CONFIG_YAML
+                ));
+                command.push("--log.level debug".to_string());
+                if args.is_empty() {
+                    command.push("--storage.tsdb.path={{configroot}}/data/".to_string());
+                } else {
+                    command.extend(args);
+                }
+            }
+            MonitoringRole::NodeExporter => {
+                // TODO: Can 127.0.0.1 cause problems?
+                command.push(format!("--web.listen-address=127.0.0.1:{}", port));
+                command.extend(args);
+            }
+        }
+        command
+    }
+
+    pub fn container_ports(&self, metrics_port: &str) -> Result<Vec<ContainerPort>, Error> {
+        let mut container_ports = vec![];
+
+        match self {
+            MonitoringRole::PodAggregator => {
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("metrics")
+                        .build(),
+                );
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("http")
+                        .build(),
+                );
+            }
+            MonitoringRole::NodeExporter => container_ports.push(
+                ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                    .name("metrics")
+                    .build(),
+            ),
+            MonitoringRole::Federation => {
+                container_ports.push(
+                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                        .name("http")
+                        .build(),
+                );
+            }
+        }
+
+        Ok(container_ports)
     }
 }
 

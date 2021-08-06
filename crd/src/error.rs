@@ -1,3 +1,5 @@
+use std::num::ParseIntError;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Illegal ZooKeeper path [{path}]: {errors:?}")]
@@ -25,6 +27,12 @@ pub enum Error {
     OperatorFrameworkError {
         #[from]
         source: stackable_operator::error::Error,
+    },
+
+    #[error("Error occurred while parsing int: {source}")]
+    ParseIntError {
+        #[from]
+        source: ParseIntError,
     },
 }
 

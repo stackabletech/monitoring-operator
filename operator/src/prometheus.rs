@@ -10,13 +10,13 @@
 //!
 //! Offers builders to dynamically create a valid and checked Prometheus configuration.
 //!
-use crate::{error, MonitoringRole};
+use crate::error;
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
 use serde_with_macros::skip_serializing_none;
 use stackable_monitoring_crd::{
-    APP_NAME, MANAGED_BY, PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL,
-    PROM_SCRAPE_TIMEOUT,
+    MonitoringRole, APP_NAME, MANAGED_BY, PROM_EVALUATION_INTERVAL, PROM_SCHEME,
+    PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
 };
 use std::collections::{BTreeMap, HashMap};
 #[cfg(test)]
