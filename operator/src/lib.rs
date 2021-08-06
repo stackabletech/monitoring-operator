@@ -10,7 +10,9 @@ use kube::Api;
 use serde_json::json;
 use tracing::{debug, error, info, trace, warn};
 
-use crate::prometheus::{ConfigManager, NodepodsTemplateDataBuilder};
+use crate::prometheus::{
+    ConfigManager, FederationTemplateDataBuilder, PodAggregatorTemplateDataBuilder,
+};
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::error::ErrorResponse;
 use product_config::types::PropertyNameKind;
@@ -61,11 +63,11 @@ type MonitoringReconcileResult = ReconcileResult<error::Error>;
 #[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
 pub enum MonitoringRole {
     /// The (pod-level) metrics aggregator. One per node required.
-    #[strum(serialize = "nodepods")]
-    NodePods,
+    #[strum(serialize = "pod-aggregator")]
+    PodAggregator,
     /// The (node-level) metrics. One per node required.
-    #[strum(serialize = "node")]
-    Node,
+    #[strum(serialize = "node-exporter")]
+    NodeExporter,
     /// The Federation metrics. One per cluster required.
     #[strum(serialize = "federation")]
     Federation,
@@ -74,10 +76,10 @@ pub enum MonitoringRole {
 impl MonitoringRole {
     pub fn image(&self, version: &MonitoringVersion) -> String {
         match self {
-            MonitoringRole::NodePods | MonitoringRole::Federation => {
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => {
                 format!("stackable/prometheus:{}", version.to_string())
             }
-            MonitoringRole::Node => {
+            MonitoringRole::NodeExporter => {
                 format!("node-exporter:{}", version.node_exporter())
             }
         }
@@ -86,11 +88,11 @@ impl MonitoringRole {
     pub fn command(&self, version: &MonitoringVersion) -> Vec<String> {
         let mut command = vec![];
         match self {
-            MonitoringRole::NodePods | MonitoringRole::Federation => command.push(format!(
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => command.push(format!(
                 "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
                 version.to_string()
             )),
-            MonitoringRole::Node => command.push(format!(
+            MonitoringRole::NodeExporter => command.push(format!(
                 "node_exporter-{}.linux-amd64/node_exporter",
                 version.node_exporter()
             )),
@@ -101,15 +103,16 @@ impl MonitoringRole {
     pub fn args(&self, port: &str, args: Vec<String>) -> Vec<String> {
         let mut command = vec![];
         match self {
-            MonitoringRole::NodePods | MonitoringRole::Federation => {
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => {
                 command.push(format!("--web.listen-address=:{}", port));
                 command.push(format!(
                     "--config.file={{{{configroot}}}}/conf/{}",
                     PROMETHEUS_CONFIG_YAML
                 ));
                 command.push("--log.level debug".to_string());
+                command.push("--storage.tsdb.path={{{{configroot}}}}/data/".to_string());
             }
-            MonitoringRole::Node => {
+            MonitoringRole::NodeExporter => {
                 // TODO: Can 127.0.0.1 cause problems?
                 command.push(format!("--web.listen-address=127.0.0.1:{}", port));
                 command.extend(args);
@@ -122,7 +125,7 @@ impl MonitoringRole {
         let mut container_ports = vec![];
 
         match self {
-            MonitoringRole::NodePods => {
+            MonitoringRole::PodAggregator => {
                 container_ports.push(
                     ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
                         .name("metrics")
@@ -134,7 +137,7 @@ impl MonitoringRole {
                         .build(),
                 );
             }
-            MonitoringRole::Node => container_ports.push(
+            MonitoringRole::NodeExporter => container_ports.push(
                 ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
                     .name("metrics")
                     .build(),
@@ -593,27 +596,41 @@ impl MonitoringState {
                         continue;
                     }
 
-                    // extract node_exporter_metrics_port from node -> group -> config
-                    let node_exporter_metrics_port =
-                        self.context.resource.spec.node_exporter_metrics_port(group);
+                    let mut content = String::new();
 
-                    let content = ConfigManager::from_nodepods_template(
-                        NodepodsTemplateDataBuilder::new_with_namespace_and_node_name(
-                            &self.context.client.default_namespace,
-                            node_name,
-                        )
-                        .with_config(config)
-                        .with_node_exporter(node_exporter_metrics_port)
-                        .with_node_exporter_labels(
-                            &self.context.name(),
-                            node_name,
-                            &self.context.namespace(),
-                        )
-                        .build(),
-                    )?;
+                    if &MonitoringRole::PodAggregator == role {
+                        // extract node_exporter_metrics_port from node -> group -> config
+                        let node_exporter_metrics_port =
+                            self.context.resource.spec.node_exporter_metrics_port(group);
+
+                        content = ConfigManager::from_pod_aggregator_template(
+                            PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
+                                &self.context.client.default_namespace,
+                                node_name,
+                            )
+                            .with_config(config)
+                            .with_node_exporter(node_exporter_metrics_port)
+                            .with_node_exporter_labels(
+                                &self.context.name(),
+                                node_name,
+                                &self.context.namespace(),
+                            )
+                            .build(),
+                        )?
+                        .serialize()?;
+                    } else if &MonitoringRole::Federation == role {
+                        content = ConfigManager::from_federation_template(
+                            FederationTemplateDataBuilder::new_with_namespace_and_node_name(
+                                &self.context.client.default_namespace,
+                            )
+                            .with_config(config)
+                            .build(),
+                        )?
+                        .serialize()?;
+                    }
 
                     let mut cm_config_data = BTreeMap::new();
-                    cm_config_data.insert(file_name.clone(), content.serialize()?);
+                    cm_config_data.insert(file_name.clone(), content);
 
                     config_maps.push(
                         ConfigMapBuilder::new()
@@ -665,8 +682,9 @@ impl MonitoringState {
         cb.command(role.command(version));
         cb.args(role.args(scrape_port, node_exporter_args));
 
-        if role != &MonitoringRole::Node {
-            cb.add_configmapvolume(cm_config_name, "conf".to_string());
+        if role != &MonitoringRole::NodeExporter {
+            cb.add_configmapvolume(cm_config_name.clone(), "conf".to_string());
+            cb.add_configmapvolume(cm_config_name, "data");
         }
         cb.add_env_vars(env_vars);
         cb.add_container_ports(role.container_ports(scrape_port)?);
@@ -777,14 +795,14 @@ impl ControllerStrategy for MonitoringStrategy {
         let mut eligible_nodes = HashMap::new();
 
         eligible_nodes.insert(
-            MonitoringRole::NodePods.to_string(),
-            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.node_pods)
+            MonitoringRole::PodAggregator.to_string(),
+            role_utils::find_nodes_that_fit_selectors(&context.client, None, &spec.pod_aggregator)
                 .await?,
         );
 
-        if let Some(node) = &spec.node {
+        if let Some(node) = &spec.node_exporter {
             eligible_nodes.insert(
-                MonitoringRole::Node.to_string(),
+                MonitoringRole::NodeExporter.to_string(),
                 role_utils::find_nodes_that_fit_selectors(&context.client, None, node).await?,
             );
         }
@@ -799,19 +817,19 @@ impl ControllerStrategy for MonitoringStrategy {
 
         let mut roles = HashMap::new();
         roles.insert(
-            MonitoringRole::NodePods.to_string(),
+            MonitoringRole::PodAggregator.to_string(),
             (
                 vec![
                     PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()),
                     PropertyNameKind::Cli,
                 ],
-                spec.node_pods.clone().into(),
+                spec.pod_aggregator.clone().into(),
             ),
         );
 
-        if let Some(node) = spec.node {
+        if let Some(node) = spec.node_exporter {
             roles.insert(
-                MonitoringRole::Node.to_string(),
+                MonitoringRole::NodeExporter.to_string(),
                 (vec![PropertyNameKind::Cli], node.into()),
             );
         }

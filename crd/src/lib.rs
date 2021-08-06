@@ -37,8 +37,8 @@ pub const NODE_METRICS_PORT: &str = "nodeMetricsPort";
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringClusterSpec {
     pub version: MonitoringVersion,
-    pub node_pods: Role<PodMonitoringConfig>,
-    pub node: Option<Role<NodeMonitoringConfig>>,
+    pub pod_aggregator: Role<PodMonitoringConfig>,
+    pub node_exporter: Option<Role<NodeMonitoringConfig>>,
     pub federation: Option<Role<PodMonitoringConfig>>,
 }
 
@@ -48,7 +48,7 @@ impl MonitoringClusterSpec {
     /// # Arguments
     /// * `role_group` - The role_group where to search for the metrics_port.
     pub fn node_exporter_metrics_port(&self, role_group: &str) -> Option<u16> {
-        if let Some(Role { role_groups, .. }) = &self.node {
+        if let Some(Role { role_groups, .. }) = &self.node_exporter {
             if let Some(RoleGroup {
                 config:
                     Some(CommonConfiguration {
@@ -68,7 +68,7 @@ impl MonitoringClusterSpec {
     /// # Arguments
     /// * `role_group` - The role_group where to search for the metrics_port.
     pub fn node_exporter_args(&self, group: &str) -> Vec<String> {
-        if let Some(Role { role_groups, .. }) = &self.node {
+        if let Some(Role { role_groups, .. }) = &self.node_exporter {
             if let Some(RoleGroup {
                 config:
                     Some(CommonConfiguration {

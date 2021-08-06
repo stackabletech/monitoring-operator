@@ -59,6 +59,8 @@ pub struct ScrapeJob {
     pub metrics_path: Option<String>,
     /// Configures the protocol scheme used for requests.
     pub scheme: Option<String>,
+    /// Optional HTTP URL parameters.
+    pub params: Option<HashMap<String, Vec<String>>>,
     /// Sets the `Authorization` header on every scrape request with the
     /// configured username and password.
     /// password and password_file are mutually exclusive.
@@ -290,11 +292,11 @@ impl FromStr for ConfigManager {
     }
 }
 
-static NODEPODS_TEMPLATE : &str = "
+static POD_AGGREGATOR_TEMPLATE : &str = "
 global:
   evaluation_interval: {{global_evaluation_interval}}
 scrape_configs:
-  - job_name: nodepods
+  - job_name: {{pod_aggregator_role_name}}
     scrape_interval: {{scrape_configs_k8s_scrape_interval}}
     scrape_timeout: {{scrape_configs_k8s_scrape_timeout}}
     scheme: {{scrape_configs_k8s_scheme}}
@@ -346,7 +348,7 @@ scrape_configs:
         action: replace
         target_label: kubernetes_pod_controller_name
 {{#if with_node_scraper}}
-  - job_name: node
+  - job_name: {{node_exporter_role_name}}
     scrape_interval: {{scrape_configs_k8s_scrape_interval}}
     static_configs:
       - targets:
@@ -360,6 +362,40 @@ scrape_configs:
           kubernetes_namespace: {{node_exporter_namespace}}
 {{/if}}
  ";
+
+static FEDERATION_TEMPLATE: &str = r#"
+global:
+  evaluation_interval: {{global_evaluation_interval}}
+scrape_configs:
+  - job_name: {{federation_role_name}}
+    scrape_interval: {{scrape_configs_k8s_scrape_interval}}
+    scrape_timeout: {{scrape_configs_k8s_scrape_timeout}}
+    scheme: {{scrape_configs_k8s_scheme}}
+    honor_labels: true
+    metrics_path: '/federate'
+    params:
+      'match[]':
+        - '{job="{{pod_aggregator_role_name}}"}'
+        - '{job="{{node_exporter_role_name}}"}'
+    kubernetes_sd_configs:
+      - role: pod
+        kubeconfig_file: KUBECONFIG
+        namespaces:
+          names:
+            - {{scrape_configs_k8s_namespace}}
+        selectors:
+          - role: pod
+            label: app.kubernetes.io/component={{pod_aggregator_role_name}},app.kubernetes.io/managed-by={{managed_by}},app.kubernetes.io/name={{app_name}}
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_container_port_name]
+        action: keep
+        regex: metrics
+      - source_labels: [__address__, __meta_kubernetes_pod_container_port_number]
+        action: replace
+        regex: ([^:]+)(?::\\d+)?;(\\d+)
+        replacement: $1:$2
+        target_label: __address__            
+ "#;
 
 /// A serializer/deserializer/builder for Prometheus configuration
 impl ConfigManager {
@@ -380,7 +416,7 @@ impl ConfigManager {
         })
     }
 
-    /// Builds Prometheus configuration from a template (`NODEPODS_TEMPLATE`)
+    /// Builds Prometheus configuration from a template (`POD_AGGREGATOR_TEMPLATE`)
     ///
     /// The value 'KUBECONFIG' of the field kubeconfig_file (in kubernetes_sd_configs) will be replaced
     /// by the prometheus-wrapper.sh script with the content of the 'KUBECONFIG' environment variable
@@ -394,14 +430,27 @@ impl ConfigManager {
     /// # Arguments
     /// * `tdata` - template variables used to render the source template.
     ///
-    pub fn from_nodepods_template(
-        tdata: &NodepodsTemplateDataBuilder,
+    pub fn from_pod_aggregator_template(
+        tdata: &PodAggregatorTemplateDataBuilder,
     ) -> Result<Self, error::Error> {
         let tengine = Handlebars::new();
-        match tengine.render_template(NODEPODS_TEMPLATE, tdata) {
+        match tengine.render_template(POD_AGGREGATOR_TEMPLATE, tdata) {
             Ok(contents) => Self::from_str(contents.as_str()),
             Err(e) => Err(error::Error::YamlNotParsable {
-                content: "NODEPODS_TEMPLATE".to_string(),
+                content: "POD_AGGREGATOR_TEMPLATE".to_string(),
+                reason: e.desc,
+            }),
+        }
+    }
+
+    pub fn from_federation_template(
+        tdata: &FederationTemplateDataBuilder,
+    ) -> Result<Self, error::Error> {
+        let tengine = Handlebars::new();
+        match tengine.render_template(FEDERATION_TEMPLATE, tdata) {
+            Ok(contents) => Self::from_str(contents.as_str()),
+            Err(e) => Err(error::Error::YamlNotParsable {
+                content: "FEDERATION_TEMPLATE".to_string(),
                 reason: e.desc,
             }),
         }
@@ -417,9 +466,9 @@ impl ConfigManager {
     }
 }
 
-/// A builder for template variables needed to render the `NODEPODS_TEMPLATE`.
+/// A builder for template variables needed to render the `POD_AGGREGATOR_TEMPLATE`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NodepodsTemplateDataBuilder {
+pub struct PodAggregatorTemplateDataBuilder {
     global_evaluation_interval: String,
     scrape_configs_k8s_scrape_interval: String,
     scrape_configs_k8s_scrape_timeout: String,
@@ -433,10 +482,12 @@ pub struct NodepodsTemplateDataBuilder {
     node_exporter_name: String,
     node_exporter_node_name: String,
     node_exporter_namespace: String,
+    pod_aggregator_role_name: String,
+    node_exporter_role_name: String,
     with_node_scraper: bool,
 }
 
-impl NodepodsTemplateDataBuilder {
+impl PodAggregatorTemplateDataBuilder {
     /// Initializes the [`NodepodsTemplateDataBuilder`] with default values, node_name and namespace.
     /// May be individually adapted later via the builder methods.
     ///
@@ -444,7 +495,7 @@ impl NodepodsTemplateDataBuilder {
     /// * `namespace` - The pod/cluster namespace.
     /// * `node_name` - The pod node_name.
     pub fn new_with_namespace_and_node_name(namespace: &str, node_name: &str) -> Self {
-        NodepodsTemplateDataBuilder {
+        PodAggregatorTemplateDataBuilder {
             global_evaluation_interval: "60s".to_string(),
             scrape_configs_k8s_scrape_interval: "60s".to_string(),
             scrape_configs_k8s_scrape_timeout: "30s".to_string(),
@@ -452,12 +503,14 @@ impl NodepodsTemplateDataBuilder {
             scrape_configs_k8s_namespace: namespace.to_string(),
             scrape_configs_k8s_selector_node_name: node_name.to_string(),
             node_exporter_metrics_port: "9100".to_string(),
-            node_exporter_component: MonitoringRole::Node.to_string(),
+            node_exporter_component: MonitoringRole::NodeExporter.to_string(),
             node_exporter_instance: "simple".to_string(),
             node_exporter_managed_by: MANAGED_BY.to_string(),
             node_exporter_name: APP_NAME.to_string(),
             node_exporter_node_name: "name".to_string(),
             node_exporter_namespace: namespace.to_string(),
+            pod_aggregator_role_name: MonitoringRole::PodAggregator.to_string(),
+            node_exporter_role_name: MonitoringRole::NodeExporter.to_string(),
             with_node_scraper: false,
         }
     }
@@ -522,6 +575,73 @@ impl NodepodsTemplateDataBuilder {
     }
 }
 
+/// A builder for template variables needed to render the `POD_AGGREGATOR_TEMPLATE`.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FederationTemplateDataBuilder {
+    global_evaluation_interval: String,
+    scrape_configs_k8s_scrape_interval: String,
+    scrape_configs_k8s_scrape_timeout: String,
+    scrape_configs_k8s_scheme: String,
+    scrape_configs_k8s_namespace: String,
+    pod_aggregator_role_name: String,
+    node_exporter_role_name: String,
+    federation_role_name: String,
+    managed_by: String,
+    app_name: String,
+}
+
+impl FederationTemplateDataBuilder {
+    /// Initializes the [`FederationTemplateDataBuilder`] with default values, node_name and namespace.
+    /// May be individually adapted later via the builder methods.
+    ///
+    /// # Arguments
+    /// * `namespace` - The pod/cluster namespace.
+    /// * `node_name` - The pod node_name.
+    pub fn new_with_namespace_and_node_name(namespace: &str) -> Self {
+        FederationTemplateDataBuilder {
+            global_evaluation_interval: "60s".to_string(),
+            scrape_configs_k8s_scrape_interval: "60s".to_string(),
+            scrape_configs_k8s_scrape_timeout: "30s".to_string(),
+            scrape_configs_k8s_scheme: "https".to_string(),
+            scrape_configs_k8s_namespace: namespace.to_string(),
+            pod_aggregator_role_name: MonitoringRole::PodAggregator.to_string(),
+            node_exporter_role_name: MonitoringRole::NodeExporter.to_string(),
+            federation_role_name: MonitoringRole::Federation.to_string(),
+            managed_by: MANAGED_BY.to_string(),
+            app_name: APP_NAME.to_string(),
+        }
+    }
+
+    /// Add configuration options from the custom resource.
+    /// Currently supported:
+    /// * `evaluation_interval`
+    /// * `scrape_interval`
+    /// * `scrape_timeout`
+    /// * `scheme`
+    ///
+    /// # Arguments
+    /// * `config` - Map of the config options to set.
+    pub fn with_config(&mut self, config: &BTreeMap<String, String>) -> &mut Self {
+        if let Some(value) = config.get(PROM_EVALUATION_INTERVAL) {
+            self.global_evaluation_interval = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCRAPE_INTERVAL) {
+            self.scrape_configs_k8s_scrape_interval = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCRAPE_TIMEOUT) {
+            self.scrape_configs_k8s_scrape_timeout = value.clone();
+        }
+        if let Some(value) = config.get(PROM_SCHEME) {
+            self.scrape_configs_k8s_scheme = value.clone();
+        }
+        self
+    }
+
+    pub fn build(&mut self) -> &Self {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -540,8 +660,11 @@ mod tests {
 
     #[test]
     fn test_nodepods_template() {
-        let manager = ConfigManager::from_nodepods_template(
-            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost"),
+        let manager = ConfigManager::from_pod_aggregator_template(
+            &PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
+                "default",
+                "localhost",
+            ),
         )
         .unwrap();
 
@@ -563,9 +686,12 @@ mod tests {
 
     #[test]
     fn test_nodepods_and_node_template() {
-        let manager = ConfigManager::from_nodepods_template(
-            NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost")
-                .with_node_exporter(Some(9111)),
+        let manager = ConfigManager::from_pod_aggregator_template(
+            PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
+                "default",
+                "localhost",
+            )
+            .with_node_exporter(Some(9111)),
         )
         .unwrap();
 
@@ -582,8 +708,11 @@ mod tests {
     }
     #[test]
     fn test_serialize() {
-        let manager = ConfigManager::from_nodepods_template(
-            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost"),
+        let manager = ConfigManager::from_pod_aggregator_template(
+            &PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
+                "default",
+                "localhost",
+            ),
         )
         .unwrap();
         let yaml = manager.serialize();
