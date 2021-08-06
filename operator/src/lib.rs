@@ -605,6 +605,8 @@ impl MonitoringState {
                         )
                         .with_config(config)
                         .with_node_exporter(node_exporter_metrics_port)
+                        .with_node_exporter_io_labels(&self.context.name(), group)
+                        .with_node_exporter_pod_labels(node_name, &self.context.namespace())
                         .build(),
                     )?;
 

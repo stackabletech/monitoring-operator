@@ -1,9 +1,10 @@
-use crate::error;
+use crate::{error, MonitoringRole};
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
 use serde_with_macros::skip_serializing_none;
 use stackable_monitoring_crd::{
-    PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
+    APP_NAME, MANAGED_BY, PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL,
+    PROM_SCRAPE_TIMEOUT,
 };
 use std::collections::{BTreeMap, HashMap};
 #[cfg(test)]
@@ -339,7 +340,13 @@ scrape_configs:
       - targets:
         - localhost:{{node_exporter_metrics_port}}
         labels:
-          node_id: this_server
+          app_kubernetes_io_component: {{node_exporter_component}}
+          app_kubernetes_io_instance: {{node_exporter_instance}}
+          app_kubernetes_io_managed_by: {{node_exporter_managed_by}}
+          app_kubernetes_io_name: {{node_exporter_name}}
+          app_kubernetes_io_role_group: {{node_exporter_role_group}}
+          kubernetes_pod_node_name: {{node_exporter_node_name}}
+          kubernetes_namespace: {{node_exporter_namespace}}
 {{/if}}
  ";
 
@@ -409,6 +416,13 @@ pub struct NodepodsTemplateDataBuilder {
     scrape_configs_k8s_namespace: String,
     scrape_configs_k8s_selector_node_name: String,
     node_exporter_metrics_port: String,
+    node_exporter_component: String,
+    node_exporter_instance: String,
+    node_exporter_managed_by: String,
+    node_exporter_name: String,
+    node_exporter_role_group: String,
+    node_exporter_node_name: String,
+    node_exporter_namespace: String,
     with_node_scraper: bool,
 }
 
@@ -422,8 +436,35 @@ impl NodepodsTemplateDataBuilder {
             scrape_configs_k8s_namespace: namespace.to_string(),
             scrape_configs_k8s_selector_node_name: name.to_string(),
             node_exporter_metrics_port: "9100".to_string(),
+            node_exporter_component: MonitoringRole::Node.to_string(),
+            node_exporter_instance: "simple".to_string(),
+            node_exporter_managed_by: MANAGED_BY.to_string(),
+            node_exporter_name: APP_NAME.to_string(),
+            node_exporter_role_group: "default".to_string(),
+            node_exporter_node_name: "<no-node-name-set>>".to_string(),
+            node_exporter_namespace: "default".to_string(),
             with_node_scraper: false,
         }
+    }
+
+    /// Enable the static scraping section of the Prometheus configuration
+    ///
+    /// # Arguments
+    /// * role - The port used to scrape the local node exporter. Default: 9100
+    /// * group - The port used to scrape the local node exporter. Default: 9100
+    pub fn with_node_exporter_io_labels(&mut self, instance: &str, group: &str) -> &mut Self {
+        self.node_exporter_instance = instance.to_string();
+        self.node_exporter_role_group = group.to_string();
+        self
+    }
+
+    /// Enable the static scraping section of the Prometheus configuration
+    /// # Arguments
+    /// * metrics_port - The port used to scrape the local node exporter. Default: 9100
+    pub fn with_node_exporter_pod_labels(&mut self, node_name: &str, namespace: &str) -> &mut Self {
+        self.node_exporter_node_name = node_name.to_string();
+        self.node_exporter_namespace = namespace.to_string();
+        self
     }
 
     /// Enable the static scraping section of the Prometheus configuration
