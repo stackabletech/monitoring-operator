@@ -110,7 +110,7 @@ impl MonitoringRole {
                     PROMETHEUS_CONFIG_YAML
                 ));
                 command.push("--log.level debug".to_string());
-                command.push("--storage.tsdb.path={{{{configroot}}}}/data/".to_string());
+                command.push("--storage.tsdb.path={{configroot}}/data/".to_string());
             }
             MonitoringRole::NodeExporter => {
                 // TODO: Can 127.0.0.1 cause problems?

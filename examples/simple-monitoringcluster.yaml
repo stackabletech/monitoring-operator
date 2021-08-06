@@ -11,7 +11,7 @@ spec:
           matchLabels:
             kubernetes.io/arch: stackable-linux
         config:
-          webUiPort: 10101
+          webUiPort: 9090
           scrapeInterval: 15s
           scrapeTimeout: 5s
           evaluationInterval: 10s
@@ -38,7 +38,7 @@ spec:
             kubernetes.io/arch: stackable-linux
         replicas: 1
         config:
-          webUiPort: 10103
+          webUiPort: 9404
           scrapeInterval: 15s
           scrapeTimeout: 5s
           evaluationInterval: 10s
