@@ -564,7 +564,7 @@ mod tests {
     #[test]
     fn test_nodepods_and_node_template() {
         let manager = ConfigManager::from_nodepods_template(
-            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost")
+            NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost")
                 .with_node_exporter(Some(9111)),
         )
         .unwrap();
