@@ -6,8 +6,10 @@ use stackable_monitoring_crd::{
     PROM_EVALUATION_INTERVAL, PROM_SCHEME, PROM_SCRAPE_INTERVAL, PROM_SCRAPE_TIMEOUT,
 };
 use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::fs;
+use std::str;
 use std::str::FromStr;
-use std::{fs, str};
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Config {
@@ -341,13 +343,14 @@ scrape_configs:
 {{/if}}
  ";
 
+/// A serializer/deserializer/builder for Prometheus configuration
 impl ConfigManager {
     /// Create a ProductConfig from a YAML file.
     ///
     /// # Arguments
     ///
     /// * `file_path` - the path to the YAML file
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn from_yaml_file(file_path: &str) -> Result<Self, error::Error> {
         let contents = fs::read_to_string(file_path).map_err(|_| error::Error::FileNotFound {
             file_name: file_path.to_string(),
@@ -359,7 +362,7 @@ impl ConfigManager {
         })
     }
 
-    /// Builds a prometheus yaml configuration file using Kubernetes Service Discovery.
+    /// Builds Prometheus configuration from a template (`NODEPODS_TEMPLATE`)
     ///
     /// The value 'KUBECONFIG' of the field kubeconfig_file (in kubernetes_sd_configs) will be replaced
     /// by the prometheus-wrapper.sh script with the content of the 'KUBECONFIG' environment variable
@@ -369,6 +372,10 @@ impl ConfigManager {
     /// port (to be scraped) and a container port name ("metrics"). This is required for the Service
     /// Discovery. Additionally we relabel all existing pod labels and expose the host ip, pod ip,
     /// controller kind and controller name.
+    ///
+    /// # Arguments
+    /// * `tdata` - template variables used to render the source template.
+    ///
     pub fn from_nodepods_template(
         tdata: &NodepodsTemplateDataBuilder,
     ) -> Result<Self, error::Error> {
@@ -382,6 +389,7 @@ impl ConfigManager {
         }
     }
 
+    /// Serialize Prometheus configuration to a Yaml string.
     pub fn serialize(&self) -> Result<String, error::Error> {
         serde_yaml::to_string(&self.config).map_err(|serde_error| {
             error::Error::PrometheusConfigCannotBeSerialized {
@@ -391,6 +399,7 @@ impl ConfigManager {
     }
 }
 
+/// A builder for template variables needed to render the `NODEPODS_TEMPLATE`
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NodepodsTemplateDataBuilder {
     global_evaluation_interval: String,
@@ -417,6 +426,9 @@ impl NodepodsTemplateDataBuilder {
         }
     }
 
+    /// Enable the static scraping section of the Prometheus configuration
+    /// # Arguments
+    /// * metrics_port - The port used to scrape the local node exporter. Default: 9100
     pub fn with_node_exporter(&mut self, metrics_port: Option<u16>) -> &mut Self {
         if let Some(port) = metrics_port {
             self.node_exporter_metrics_port = port.to_string();
@@ -482,6 +494,26 @@ mod tests {
                 .unwrap()
                 .as_str(),
             "spec.nodeName=localhost"
+        )
+    }
+
+    #[test]
+    fn test_nodepods_and_node_template() {
+        let manager = ConfigManager::from_nodepods_template(
+            &NodepodsTemplateDataBuilder::new_with_namespace_and_node_name("default", "localhost")
+                .with_node_exporter(Some(9111)),
+        )
+        .unwrap();
+
+        assert_eq!(
+            manager.config.scrape_configs[1]
+                .static_configs
+                .as_ref()
+                .unwrap()[0]
+                .targets
+                .as_ref()
+                .unwrap()[0],
+            "localhost:9111"
         )
     }
     #[test]
