@@ -43,7 +43,11 @@ pub struct MonitoringClusterSpec {
 }
 
 impl MonitoringClusterSpec {
-    pub fn node_exporter_metrics_port(&self, group: &str) -> Option<u16> {
+    /// Extract the metrics_port for a given role_group and node_exporter role (MonitoringRole::Node).
+    ///
+    /// # Arguments
+    /// * `role_group` - The role_group where to search for the metrics_port.
+    pub fn node_exporter_metrics_port(&self, role_group: &str) -> Option<u16> {
         if let Some(Role { role_groups, .. }) = &self.node {
             if let Some(RoleGroup {
                 config:
@@ -51,7 +55,7 @@ impl MonitoringClusterSpec {
                         config: Some(conf), ..
                     }),
                 ..
-            }) = role_groups.get(group)
+            }) = role_groups.get(role_group)
             {
                 return conf.metrics_port;
             }
@@ -59,6 +63,10 @@ impl MonitoringClusterSpec {
         None
     }
 
+    /// Extract the node_exporter_args for a given role_group and node_exporter role (MonitoringRole::Node).
+    ///
+    /// # Arguments
+    /// * `role_group` - The role_group where to search for the metrics_port.
     pub fn node_exporter_args(&self, group: &str) -> Vec<String> {
         if let Some(Role { role_groups, .. }) = &self.node {
             if let Some(RoleGroup {

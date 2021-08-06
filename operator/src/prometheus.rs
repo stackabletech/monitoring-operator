@@ -1,3 +1,15 @@
+//! Hard typed Prometheus configuration.
+//!
+//! Provides structs and methods to serialize and deserialize a Prometheus yaml configuration:
+//!
+//! * Supports [`ScrapeJob`] for scraping targets and [`Global`] configuration.
+//! * Supports [`KubernetesSdConfigs`], [`StaticSdConfigs`] for Service Discovery
+//! * Supports security abstraction with [`TlsConfig`], [`OAuth2`] or [`BasicAuthentication`]
+//! * Supports [`RelabelConfigs`] with all [`Action`], regex, replacements etc.
+//! * Supports other common configuration options like proxy, http or https scheme etc.
+//!
+//! Offers builders to dynamically create a valid and checked Prometheus configuration.
+//!
 use crate::{error, MonitoringRole};
 use handlebars::Handlebars;
 use serde::{Deserialize, Serialize};
@@ -344,7 +356,6 @@ scrape_configs:
           app_kubernetes_io_instance: {{node_exporter_instance}}
           app_kubernetes_io_managed_by: {{node_exporter_managed_by}}
           app_kubernetes_io_name: {{node_exporter_name}}
-          app_kubernetes_io_role_group: {{node_exporter_role_group}}
           kubernetes_pod_node_name: {{node_exporter_node_name}}
           kubernetes_namespace: {{node_exporter_namespace}}
 {{/if}}
@@ -406,7 +417,7 @@ impl ConfigManager {
     }
 }
 
-/// A builder for template variables needed to render the `NODEPODS_TEMPLATE`
+/// A builder for template variables needed to render the `NODEPODS_TEMPLATE`.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NodepodsTemplateDataBuilder {
     global_evaluation_interval: String,
@@ -420,56 +431,59 @@ pub struct NodepodsTemplateDataBuilder {
     node_exporter_instance: String,
     node_exporter_managed_by: String,
     node_exporter_name: String,
-    node_exporter_role_group: String,
     node_exporter_node_name: String,
     node_exporter_namespace: String,
     with_node_scraper: bool,
 }
 
 impl NodepodsTemplateDataBuilder {
-    pub fn new_with_namespace_and_node_name(namespace: &str, name: &str) -> Self {
+    /// Initializes the [`NodepodsTemplateDataBuilder`] with default values, node_name and namespace.
+    /// May be individually adapted later via the builder methods.
+    ///
+    /// # Arguments
+    /// * `namespace` - The pod/cluster namespace.
+    /// * `node_name` - The pod node_name.
+    pub fn new_with_namespace_and_node_name(namespace: &str, node_name: &str) -> Self {
         NodepodsTemplateDataBuilder {
             global_evaluation_interval: "60s".to_string(),
             scrape_configs_k8s_scrape_interval: "60s".to_string(),
             scrape_configs_k8s_scrape_timeout: "30s".to_string(),
             scrape_configs_k8s_scheme: "https".to_string(),
             scrape_configs_k8s_namespace: namespace.to_string(),
-            scrape_configs_k8s_selector_node_name: name.to_string(),
+            scrape_configs_k8s_selector_node_name: node_name.to_string(),
             node_exporter_metrics_port: "9100".to_string(),
             node_exporter_component: MonitoringRole::Node.to_string(),
             node_exporter_instance: "simple".to_string(),
             node_exporter_managed_by: MANAGED_BY.to_string(),
             node_exporter_name: APP_NAME.to_string(),
-            node_exporter_role_group: "default".to_string(),
-            node_exporter_node_name: "<no-node-name-set>>".to_string(),
-            node_exporter_namespace: "default".to_string(),
+            node_exporter_node_name: "name".to_string(),
+            node_exporter_namespace: namespace.to_string(),
             with_node_scraper: false,
         }
     }
 
-    /// Enable the static scraping section of the Prometheus configuration
+    /// Extend the static scraping section with `instance`, `node_name` and `namespace` labels.
     ///
     /// # Arguments
-    /// * role - The port used to scrape the local node exporter. Default: 9100
-    /// * group - The port used to scrape the local node exporter. Default: 9100
-    pub fn with_node_exporter_io_labels(&mut self, instance: &str, group: &str) -> &mut Self {
+    /// * `instance` - The name of the deployed custom resource.
+    /// * `node_name` - The pod node_name.
+    /// * `namespace` - The pod/cluster namespace.
+    pub fn with_node_exporter_labels(
+        &mut self,
+        instance: &str,
+        node_name: &str,
+        namespace: &str,
+    ) -> &mut Self {
         self.node_exporter_instance = instance.to_string();
-        self.node_exporter_role_group = group.to_string();
-        self
-    }
-
-    /// Enable the static scraping section of the Prometheus configuration
-    /// # Arguments
-    /// * metrics_port - The port used to scrape the local node exporter. Default: 9100
-    pub fn with_node_exporter_pod_labels(&mut self, node_name: &str, namespace: &str) -> &mut Self {
         self.node_exporter_node_name = node_name.to_string();
         self.node_exporter_namespace = namespace.to_string();
         self
     }
 
-    /// Enable the static scraping section of the Prometheus configuration
+    /// Enable the static scraping section of the Prometheus configuration.
+    ///
     /// # Arguments
-    /// * metrics_port - The port used to scrape the local node exporter. Default: 9100
+    /// * `metrics_port` - The port used to scrape the local node exporter. Default: 9100.
     pub fn with_node_exporter(&mut self, metrics_port: Option<u16>) -> &mut Self {
         if let Some(port) = metrics_port {
             self.node_exporter_metrics_port = port.to_string();
@@ -478,6 +492,15 @@ impl NodepodsTemplateDataBuilder {
         self
     }
 
+    /// Add configuration options from the custom resource.
+    /// Currently supported:
+    /// * `evaluation_interval`
+    /// * `scrape_interval`
+    /// * `scrape_timeout`
+    /// * `scheme`
+    ///
+    /// # Arguments
+    /// * `config` - Map of the config options to set.
     pub fn with_config(&mut self, config: &BTreeMap<String, String>) -> &mut Self {
         if let Some(value) = config.get(PROM_EVALUATION_INTERVAL) {
             self.global_evaluation_interval = value.clone();
