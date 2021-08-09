@@ -4,16 +4,17 @@ After installation, the CRD for this operator must be created:
 
     kubectl apply -f /etc/stackable/monitoring-operator/crd/deploy/monitoringcluster.crd.yaml
 
-The following example creates a monitoring cluster where a Prometheus and a Node Exporter instance are deployed on each node.
+The following example creates a complete monitoring cluster with three roles: `podAggregator`, `nodeExporter` and `federation`.
 
-Prometheus is configured using the `podAggregator` role to scrape all Pods marked with the label `monitoring.stackable.tech/should_be_scraped` **and** that are running
-on the same machine as Prometheus. Properties defined in the `podAggregator.roleGroups.default.config` section are applied to Prometheus.
+The role `nodeExporter` is used to configure the Prometheus Node Exporter on every node in the K8S cluster.. Metrics are exposed on port `10102` and the `cliArgs` are passed on to the `node-exporter` executable as command line arguments. The `node-exporter` collects hardware metrics from the host and exposes them for scraping on the `metricsPort`. This role is designed to be used in non containerized environments.
 
-The role `nodeExporter` is used to configure the Node Exporter. Metrics are exposed on port `10102` and the `nodeExporterArgs` are passed on to the `node-exporter` executable
-as command line arguments.
+The `podAggregator` role used to scrape the `nodeExporter` running on `localhost` and all local (to the machine) K8S pods marked with the label `monitoring.stackable.tech/should_be_scraped`. Properties defined in the `podAggregator.roleGroups.default.config` section are applied to Prometheus configuration file
+and the `cliArgs` are appended to the command line arguments.
 
-The cluster can be configured via a YAML file. This custom resource specifies the amount of replicas for each role group, role group or role specific configuration like port definition etc. The 'podAggregator' and 'nodeExporter' have no replicas specified which means that on each available node, a pod is scheduled. The 'federation', which collects metrics from all 'podAggregator' pods and 'nodeExporter' pods can be specified to a desired amount (=1 in the example).
+Both the `nodeExporter` role and the `podAggregator` role are expected to be deployed once on every node in the K8S cluster. They are similar to K8S `DaemonSets`.The `federation` role is different. It's purpose is to provide unified overview over all metrics collected from the products deployed in the K8S cluster. For this reason, it is configured with a `replicas` property of one. It is possible to have `federation` roles with more then one replicas but user should be aware that each additional replica induces a collection overhead on the `podAggregator`s that might be significant. Users are expected to manage their metrics over this single role.
 
+
+    cat <<EOF | kubectl apply -f -
     apiVersion: monitoring.stackable.tech/v1alpha1
     kind: MonitoringCluster
     metadata:
@@ -27,11 +28,14 @@ The cluster can be configured via a YAML file. This custom resource specifies th
               matchLabels:
                 kubernetes.io/arch: stackable-linux
             config:
-              webUiPort: 10101
+              webUiPort: 9090
               scrapeInterval: 15s
               scrapeTimeout: 5s
               evaluationInterval: 10s
               scheme: http
+              cliArgs:
+                - "--storage.tsdb.path={{configroot}}/aggregator_data/"
+                - "--storage.tsdb.retention.time=7d"
       nodeExporter:
         roleGroups:
           default:
@@ -40,7 +44,7 @@ The cluster can be configured via a YAML file. This custom resource specifies th
                 kubernetes.io/arch: stackable-linux
             config:
               metricsPort: 10102
-              nodeExporterArgs:
+              cliArgs:
                 - "--no-collector.wifi"
                 - "--no-collector.hwmon"
                 - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
@@ -54,11 +58,15 @@ The cluster can be configured via a YAML file. This custom resource specifies th
                 kubernetes.io/arch: stackable-linux
             replicas: 1
             config:
-              webUiPort: 10103
+              webUiPort: 9404
               scrapeInterval: 15s
               scrapeTimeout: 5s
               evaluationInterval: 10s
               scheme: http
+              cliArgs:
+                - "--storage.tsdb.path={{configroot}}/federation_data/"
+                - "--storage.tsdb.retention.time=30d"
+
 
 === Structure
 
