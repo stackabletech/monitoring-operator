@@ -4,19 +4,22 @@ metadata:
   name: simple
 spec:
   version: 2.28.1
-  nodePods:
+  podAggregator:
     roleGroups:
       default:
         selector:
           matchLabels:
             kubernetes.io/arch: stackable-linux
         config:
-          webUiPort: 10101
+          webUiPort: 9090
           scrapeInterval: 15s
           scrapeTimeout: 5s
           evaluationInterval: 10s
           scheme: http
-  node:
+          cliArgs:
+            - "--storage.tsdb.path={{configroot}}/aggregator_data/"
+            - "--storage.tsdb.retention.time=7d"
+  nodeExporter:
     roleGroups:
       default:
         selector:
@@ -24,25 +27,28 @@ spec:
             kubernetes.io/arch: stackable-linux
         config:
           metricsPort: 10102
-          nodeExporterArgs:
+          cliArgs:
             - "--no-collector.wifi"
             - "--no-collector.hwmon"
             - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
             - "--collector.netclass.ignored-devices=^(veth.*|[a-f0-9]{15})$"
             - "--collector.netdev.device-exclude=^(veth.*|[a-f0-9]{15})$"
-#  cluster:
-#    roleGroups:
-#      default:
-#        selector:
-#          matchLabels:
-#            kubernetes.io/arch: stackable-linux
-#        replicas: 1
-#        config:
-#          webUiPort: 10103
-#          scrapeInterval: 15s
-#          scrapeTimeout: 5s
-#          evaluationInterval: 10s
-#          scheme: http
+  federation:
+    roleGroups:
+      default:
+        selector:
+          matchLabels:
+            kubernetes.io/arch: stackable-linux
+        replicas: 1
+        config:
+          webUiPort: 9404
+          scrapeInterval: 15s
+          scrapeTimeout: 5s
+          evaluationInterval: 10s
+          scheme: http
+          cliArgs:
+            - "--storage.tsdb.path={{configroot}}/federation_data/"
+            - "--storage.tsdb.retention.time=30d"
 
 
 

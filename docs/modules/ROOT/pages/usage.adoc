@@ -2,15 +2,17 @@
 
 After installation, the CRD for this operator must be created:
 
-    kubectl apply -f /etc/stackable/monitoring-operator/crd/monitoringcluster.crd.yaml
+    kubectl apply -f /etc/stackable/monitoring-operator/crd/deploy/monitoringcluster.crd.yaml
 
-The following example creates a monitoring cluster where a Prometheus and a Node Exporter instance is deployed on each node.
+The following example creates a complete monitoring cluster with three roles: `podAggregator`, `nodeExporter` and `federation`.
 
-Prometheus is configured using the `nodePods` role to scrape all Pods marked with the label `monitoring.stackable.tech/should_be_scraped` **and** that are running
-on the same machine as Prometheus. Properties defined in the `nodePods.roleGroups.default.config` section are applyed to Prometheus.
+The role `nodeExporter` is used to configure the Prometheus Node Exporter on every node in the K8S cluster.. Metrics are exposed on port `10102` and the `cliArgs` are passed on to the `node-exporter` executable as command line arguments. The `node-exporter` collects hardware metrics from the host and exposes them for scraping on the `metricsPort`. This role is designed to be used in non containerized environments.
 
-The role `node` is used to configure the Node Exporter. Metrics are exposed on port `10102` and the `nodeExporterArgs` are passed on to the `node-exporter` executable
-as command line arguments.
+The `podAggregator` role used to scrape the `nodeExporter` running on `localhost` and all local (to the machine) K8S pods marked with the label `monitoring.stackable.tech/should_be_scraped`. Properties defined in the `podAggregator.roleGroups.default.config` section are applied to Prometheus configuration file
+and the `cliArgs` are appended to the command line arguments.
+
+Both the `nodeExporter` role and the `podAggregator` role are expected to be deployed once on every node in the K8S cluster. They are similar to K8S `DaemonSets`.The `federation` role is different. It's purpose is to provide unified overview over all metrics collected from the products deployed in the K8S cluster. For this reason, it is configured with a `replicas` property of one. It is possible to have `federation` roles with more then one replicas but user should be aware that each additional replica induces a collection overhead on the `podAggregator`s that might be significant. Users are expected to manage their metrics over this single role.
+
 
     cat <<EOF | kubectl apply -f -
     apiVersion: monitoring.stackable.tech/v1alpha1
@@ -19,19 +21,22 @@ as command line arguments.
       name: simple
     spec:
       version: 2.28.1
-      nodePods:
+      podAggregator:
         roleGroups:
           default:
             selector:
               matchLabels:
                 kubernetes.io/arch: stackable-linux
             config:
-              webUiPort: 10101
+              webUiPort: 9090
               scrapeInterval: 15s
               scrapeTimeout: 5s
               evaluationInterval: 10s
               scheme: http
-      node:
+              cliArgs:
+                - "--storage.tsdb.path={{configroot}}/aggregator_data/"
+                - "--storage.tsdb.retention.time=7d"
+      nodeExporter:
         roleGroups:
           default:
             selector:
@@ -39,11 +44,162 @@ as command line arguments.
                 kubernetes.io/arch: stackable-linux
             config:
               metricsPort: 10102
-              nodeExporterArgs:
+              cliArgs:
                 - "--no-collector.wifi"
                 - "--no-collector.hwmon"
                 - "--collector.filesystem.ignored-mount-points=^/(dev|proc|sys|var/lib/docker/.+|var/lib/kubelet/pods/.+)($|/)"
                 - "--collector.netclass.ignored-devices=^(veth.*|[a-f0-9]{15})$"
                 - "--collector.netdev.device-exclude=^(veth.*|[a-f0-9]{15})$"
-      EOF
+      federation:
+        roleGroups:
+          default:
+            selector:
+              matchLabels:
+                kubernetes.io/arch: stackable-linux
+            replicas: 1
+            config:
+              webUiPort: 9404
+              scrapeInterval: 15s
+              scrapeTimeout: 5s
+              evaluationInterval: 10s
+              scheme: http
+              cliArgs:
+                - "--storage.tsdb.path={{configroot}}/federation_data/"
+                - "--storage.tsdb.retention.time=30d"
+
+
+=== Structure
+
+There are three levels of configuration:
+
+[cols="1,1"]
+|===
+|Common shared options
+|Contains configuration that is shared within the whole cluster ensemble. E.g. version, image, encryption or logging.
+
+|Role options
+|This configuration is shared for all roles of a certain type (in this operator, only the Server role).
+
+|RoleGroup options
+|Options provided in the role group apply to each created "pod".
+|===
+
+=== Common shared options
+[cols="1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Prometheus/Victoria properties
+
+|version
+|string
+|The Monitoring version used in the format: x.y.z
+|
+|===
+
+=== Role & RoleGroup options
+We summarize Role and RoleGroup options. They are the same options for Role and RoleGroup.
+
+==== PodAggregator
+[cols="1,1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Prometheus/Victoria properties
+|Location
+
+|webUiPort
+|integer
+|Start the Prometheus / Victoria UI on a different port (default 9090).
+|--web.listen-address
+|cli
+
+|scrapeInterval
+|string
+|How frequently to scrape targets from this job (10s, 1h30m). Must be higher than the scrapeTimeout.
+|scrape_interval
+|prometheus.yaml
+
+|scrapeTimeout
+|string
+|How long until a scrape request times out. (10s, 1h30m). Must be lower than the scrapeInterval.
+|scrape_timeout
+|prometheus.yaml
+
+|evaluationInterval
+|string
+|How frequently to evaluate rules. (10s, 1h30m).
+|evaluation_interval
+|prometheus.yaml
+
+|schema
+|string
+|Configures the protocol scheme used for requests.
+|schema
+|prometheus.yaml
+|===
+
+==== NodeExporter
+[cols="1,1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Prometheus/Victoria properties
+|Location
+
+|metricsPort
+|integer
+|Start the Prometheus Node Exporter on a different port (default 9100).
+|--web.listen-address
+|cli
+
+|nodeExporterArgs
+|Array[string]
+|Configuration parameters on what and how to scrape node metrics.
+|
+|cli
+|===
+
+==== Federation
+[cols="1,1,1,1,1"]
+|===
+|Name
+|Type
+|Description
+|Related Prometheus/Victoria properties
+|Location
+
+|webUiPort
+|integer
+|Start the Prometheus / Victoria UI on a different port (default 9090).
+|--web.listen-address
+|cli
+
+|scrapeInterval
+|string
+|How frequently to scrape targets from this job (10s, 1h30m). Must be higher than the scrapeTimeout.
+|scrape_interval
+|prometheus.yaml
+
+|scrapeTimeout
+|string
+|How long until a scrape request times out. (10s, 1h30m). Must be lower than the scrapeInterval.
+|scrape_timeout
+|prometheus.yaml
+
+|evaluationInterval
+|string
+|How frequently to evaluate rules. (10s, 1h30m).
+|evaluation_interval
+|prometheus.yaml
+
+|schema
+|string
+|Configures the protocol scheme used for requests.
+|schema
+|prometheus.yaml
+|===
 

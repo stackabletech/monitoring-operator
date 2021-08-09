@@ -31,6 +31,10 @@ spec:
                     config:
                       nullable: true
                       properties:
+                        cliArgs:
+                          items:
+                            type: string
+                          type: array
                         evaluationInterval:
                           nullable: true
                           type: string
@@ -48,6 +52,8 @@ spec:
                           minimum: 0.0
                           nullable: true
                           type: integer
+                      required:
+                        - cliArgs
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -72,6 +78,10 @@ spec:
                           config:
                             nullable: true
                             properties:
+                              cliArgs:
+                                items:
+                                  type: string
+                                type: array
                               evaluationInterval:
                                 nullable: true
                                 type: string
@@ -89,6 +99,8 @@ spec:
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
+                            required:
+                              - cliArgs
                             type: object
                           configOverrides:
                             additionalProperties:
@@ -144,7 +156,7 @@ spec:
                   required:
                     - roleGroups
                   type: object
-                node:
+                nodeExporter:
                   nullable: true
                   properties:
                     cliOverrides:
@@ -155,17 +167,17 @@ spec:
                     config:
                       nullable: true
                       properties:
+                        cliArgs:
+                          items:
+                            type: string
+                          type: array
                         metricsPort:
                           format: uint16
                           minimum: 0.0
                           nullable: true
                           type: integer
-                        nodeExporterArgs:
-                          items:
-                            type: string
-                          type: array
                       required:
-                        - nodeExporterArgs
+                        - cliArgs
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -190,17 +202,17 @@ spec:
                           config:
                             nullable: true
                             properties:
+                              cliArgs:
+                                items:
+                                  type: string
+                                type: array
                               metricsPort:
                                 format: uint16
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
-                              nodeExporterArgs:
-                                items:
-                                  type: string
-                                type: array
                             required:
-                              - nodeExporterArgs
+                              - cliArgs
                             type: object
                           configOverrides:
                             additionalProperties:
@@ -256,7 +268,7 @@ spec:
                   required:
                     - roleGroups
                   type: object
-                nodePods:
+                podAggregator:
                   properties:
                     cliOverrides:
                       additionalProperties:
@@ -266,6 +278,10 @@ spec:
                     config:
                       nullable: true
                       properties:
+                        cliArgs:
+                          items:
+                            type: string
+                          type: array
                         evaluationInterval:
                           nullable: true
                           type: string
@@ -283,6 +299,8 @@ spec:
                           minimum: 0.0
                           nullable: true
                           type: integer
+                      required:
+                        - cliArgs
                       type: object
                     configOverrides:
                       additionalProperties:
@@ -307,6 +325,10 @@ spec:
                           config:
                             nullable: true
                             properties:
+                              cliArgs:
+                                items:
+                                  type: string
+                                type: array
                               evaluationInterval:
                                 nullable: true
                                 type: string
@@ -324,6 +346,8 @@ spec:
                                 minimum: 0.0
                                 nullable: true
                                 type: integer
+                            required:
+                              - cliArgs
                             type: object
                           configOverrides:
                             additionalProperties:
@@ -384,7 +408,7 @@ spec:
                     - 2.28.1
                   type: string
               required:
-                - nodePods
+                - podAggregator
                 - version
               type: object
             status:
