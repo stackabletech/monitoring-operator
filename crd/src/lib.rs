@@ -69,12 +69,14 @@ impl MonitoringClusterSpec {
         None
     }
 
-    /// Extract the node_exporter_args for a given role_group and node_exporter role (MonitoringRole::Node).
+    /// Return command line args configured by the user in the custom resource for the given `role` and `group`.
+    /// These arguments are appended to the mandatory argument list that is set by this operator. This list
+    /// includes things like IP addresses and ports.
     ///
     /// # Arguments
-    /// * `role` - The role where to search for the metrics_port.
-    /// * `role_group` - The role_group where to search for the metrics_port.
-    pub fn node_exporter_args(&self, role: &MonitoringRole, group: &str) -> Vec<String> {
+    /// * `role` - The role where to search for command line args.
+    /// * `group` - The role group where to search for command line args.
+    pub fn cli_args(&self, role: &MonitoringRole, group: &str) -> Vec<String> {
         match role {
             MonitoringRole::PodAggregator => {
                 if let Some(RoleGroup {
@@ -88,22 +90,8 @@ impl MonitoringClusterSpec {
                     return conf.cli_args.clone();
                 }
             }
-            MonitoringRole::NodeExporter => {
+            MonitoringRole::Federation | MonitoringRole::NodeExporter => {
                 if let Some(Role { role_groups, .. }) = &self.node_exporter {
-                    if let Some(RoleGroup {
-                        config:
-                            Some(CommonConfiguration {
-                                config: Some(conf), ..
-                            }),
-                        ..
-                    }) = role_groups.get(group)
-                    {
-                        return conf.cli_args.clone();
-                    }
-                }
-            }
-            MonitoringRole::Federation => {
-                if let Some(Role { role_groups, .. }) = &self.federation {
                     if let Some(RoleGroup {
                         config:
                             Some(CommonConfiguration {

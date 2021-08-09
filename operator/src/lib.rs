@@ -577,7 +577,7 @@ impl MonitoringState {
 
         let version = &self.context.resource.spec.version;
 
-        let cli_args = self.context.resource.spec.node_exporter_args(role, group);
+        let cli_args = self.context.resource.spec.cli_args(role, group);
 
         let mut cb = ContainerBuilder::new("monitoring");
         cb.image(role.image(version));
