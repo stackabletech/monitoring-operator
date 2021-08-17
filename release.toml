@@ -3,7 +3,7 @@ tag-prefix = ""
 tag-name = "{{version}}"
 pre-release-replacements = [
   {file="README.adoc", search="Current release: [a-z0-9\\.-]+", replace="Current release: {{version}}"} ,
-  {file="README.adoc", search="Release date: [0-9\\.-\s]+", replace="Release date: {{date}}"} ,
+  {file="README.adoc", search="Release date: [0-9\\.- ]+", replace="Release date: {{date}}"} ,
   {file="CHANGELOG.adoc", search="Unreleased", replace="{{version}}"},
   {file="CHANGELOG.adoc", search="ReleaseDate", replace="{{date}}"},
   {file="CHANGELOG.adoc", search="<!-- next-header -->", replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate"},
