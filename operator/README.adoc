@@ -1,29 +1,5 @@
 = Stackable Operator for Monitoring and Metrics
 
 Current release: 0.1.0
+Release date: 2021-08-27 13:20
 
-This is a Kubernetes Operator to manage Monitoring and Metrics ensembles.
-
-It is written by https://www.stackable.de[Stackable] in Rust, and it is supposed to be used with the https://github.com/stackabletech/agent[Stackable Agent] instead of the Kubernetes kubelet.
-
-The docs can be found in the `docs` subdirectory, and they are published together with docs for all other Stackable products at https://docs.stackable.tech.
-
-Currently, this operator uses Prometheus as a metric aggregator per machine ('podAggregator'). It may be switched out for the more lightweight VictoriaMetrics. It should be deployed on every machine/node once.
-
-It uses Kubernetes Service Discovery to scrape pods belonging to its machine/node.
-Pods that should be scraped need to expose a container port called "metrics" as well as an annotation "monitoring.stackable.tec/should_be_scraped=true".
-
-A role 'nodeExporter' can be configured to collect metrics of the physical machine itself.
-This NodeExporter should be deployed on every machine where these metrics should be exposed.
-
-Additionally, a 'federation' role that collects the metrics from each 'podAggregator' and 'nodeExporter' can be defined.
-Usually one federation instance per cluster is sufficient.
-
-== Building
-
-This operator is written in Rust.
-It is developed against the latest Rust release (1.54 at the time of writing this).
-
-    cargo build
-
-The docs can be found in the `docs` subdirectory, and they are published together with docs for all other Stackable products at https://docs.stackable.tech.
