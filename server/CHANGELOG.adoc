@@ -2,7 +2,9 @@
 
 <!-- next-header -->
 
-== [Unreleased] - ReleaseDate
+## [Unreleased] - ReleaseDate
+
+== [0.1.0] - 2021-08-17
 
 === Added
 * release.toml and supporting files to make releases.
