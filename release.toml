@@ -5,7 +5,7 @@ disable-publish = true
 #upload-doc = true
 #pre-release-hook = ["./hook.sh", "一", "два", "Three", "4"]
 pre-release-replacements = [
-  {file="README.md", search="Current release: [a-z0-9\\.-]+", replace="Current release: {{version}}"} ,
+  {file="README.adoc", search="Current release: [a-z0-9\\.-]+", replace="Current release: {{version}}"} ,
   {file="CHANGELOG.adoc", search="Unreleased", replace="{{version}}"},
   {file="CHANGELOG.adoc", search="ReleaseDate", replace="{{date}}"},
   {file="CHANGELOG.adoc", search="<!-- next-header -->", replace="<!-- next-header -->\n\n## [Unreleased] - ReleaseDate"},
