@@ -4,7 +4,7 @@ description = "Stackable Monitoring Operator - The Operator Library"
 edition = "2018"
 license = "Apache-2.0"
 name = "stackable-monitoring-operator"
-version = "0.3.0"
+version = "0.3.1"
 
 [dependencies]
 product-config = { git = "https://github.com/stackabletech/product-config.git", branch = "main" }
