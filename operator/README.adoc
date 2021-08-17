@@ -1,6 +1,6 @@
 = Stackable Operator for Monitoring and Metrics
 
-Current release: 0.1.0-nightly
+Current release: 0.1.0
 
 This is a Kubernetes Operator to manage Monitoring and Metrics ensembles.
 
