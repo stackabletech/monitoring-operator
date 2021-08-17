@@ -4,7 +4,7 @@ description = "Stackable Monitoring Operatpr"
 edition = "2018"
 license = "Apache-2.0"
 name = "stackable-monitoring-operator-server"
-version = "0.1.0"
+version = "0.1.1-alpha.0"
 
 [dependencies]
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
