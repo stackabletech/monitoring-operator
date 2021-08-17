@@ -1,6 +1,7 @@
 disable-publish = true
 tag-prefix = ""
 tag-name = "{{version}}"
+push-options = [ "-f" ]
 pre-release-replacements = [
   {file="README.adoc", search="Current release: [a-z0-9\\.-]+", replace="Current release: {{version}}"} ,
   {file="README.adoc", search="Release date: .+", replace="Release date: {{date}}"} ,
