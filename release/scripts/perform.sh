@@ -1,11 +1,21 @@
 #!/usr/bin/env sh
-
-#set -x
-
+#
+# Usage: perform.sh <level>
+#
+# <level> : "major", "minor" or "patch". Default: "minor".
+#
 BASE_BRANCH="main"
-
+REPOSITORY="origin"
 NOW_UTC=$(date -u '+%Y%m%d%H%M%S')
 RELEASE_BRANCH="release-$NOW_UTC"
+
+ensure_cargo_release() {
+  cargo help release > /dev/null 2>&1 
+  if [ "$?" != "0" ]; then
+    >&2 echo "ERROR cargo-release not installed. Stop."
+    exit 1
+  fi
+}
 
 ensure_release_branch() {
   local STATUS=$(git status -s | grep -v '??')
@@ -16,13 +26,13 @@ ensure_release_branch() {
   fi
 
   git switch -c ${RELEASE_BRANCH} ${BASE_BRANCH}
-  git push -u origin ${RELEASE_BRANCH}
+  git push -u ${REPOSITORY} ${RELEASE_BRANCH}
 }
 
 tag_release_commit() {
   local TAG=$1
   git tag $TAG HEAD^
-  git push origin ${RELEASE_BRANCH} 
+  git push ${REPOSITORY} ${RELEASE_BRANCH} 
   git push --tags
 }
 
@@ -36,9 +46,13 @@ maybe_create_github_pr() {
 
 main() {
 
+  local RELEASE_LEVEL=${1:-minor}
+
+  ensure_cargo_release
+
   ensure_release_branch
 
-  cargo release minor --workspace --no-confirm
+  cargo release ${RELEASE_LEVEL} --workspace --no-confirm
 
   local TAG_NAME=$(cat VERSION)
 
