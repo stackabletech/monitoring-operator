@@ -31,7 +31,7 @@ ensure_release_branch() {
 
 tag_release_commit() {
   local TAG=$1
-  git tag $TAG HEAD^
+  git tag -a $TAG -m "release $TAG" HEAD^
   git push ${REPOSITORY} ${RELEASE_BRANCH} 
   git push --tags
 }
