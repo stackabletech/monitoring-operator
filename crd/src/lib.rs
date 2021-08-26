@@ -90,8 +90,22 @@ impl MonitoringClusterSpec {
                     return conf.cli_args.clone();
                 }
             }
-            MonitoringRole::Federation | MonitoringRole::NodeExporter => {
+            MonitoringRole::NodeExporter => {
                 if let Some(Role { role_groups, .. }) = &self.node_exporter {
+                    if let Some(RoleGroup {
+                        config:
+                            Some(CommonConfiguration {
+                                config: Some(conf), ..
+                            }),
+                        ..
+                    }) = role_groups.get(group)
+                    {
+                        return conf.cli_args.clone();
+                    }
+                }
+            }
+            MonitoringRole::Federation => {
+                if let Some(Role { role_groups, .. }) = &self.federation {
                     if let Some(RoleGroup {
                         config:
                             Some(CommonConfiguration {
