@@ -18,7 +18,8 @@ use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringRole,
-    MonitoringVersion, APP_NAME, NODE_METRICS_PORT, PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
+    MonitoringVersion, APP_NAME, CONFIG_DIR, CONFIG_MAP_TYPE_CONFIG, NODE_METRICS_PORT,
+    PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
 };
 use stackable_operator::builder::{ContainerBuilder, ObjectMetaBuilder, PodBuilder};
 use stackable_operator::client::Client;
@@ -51,7 +52,6 @@ use std::time::Duration;
 use strum::IntoEnumIterator;
 
 const FINALIZER_NAME: &str = "monitoring.stackable.tech/cleanup";
-const CONFIG_MAP_TYPE_CONFIG: &str = "config";
 
 type MonitoringReconcileResult = ReconcileResult<error::Error>;
 
@@ -330,7 +330,7 @@ impl MonitoringState {
                             role_group
                         );
 
-                        // now we have a node that needs pods -> get validated config
+                        // now we have a node that needs a pod -> get validated config
                         let validated_config = config_for_role_and_group(
                             role_str,
                             role_group,
@@ -577,7 +577,7 @@ impl MonitoringState {
         if role != &MonitoringRole::NodeExporter {
             if let Some(config_map_data) = config_maps.get(CONFIG_MAP_TYPE_CONFIG) {
                 if let Some(name) = config_map_data.metadata.name.as_ref() {
-                    cb.add_configmapvolume(name, "conf".to_string());
+                    cb.add_configmapvolume(name, CONFIG_DIR.to_string());
                 } else {
                     return Err(error::Error::MissingConfigMapNameError {
                         cm_type: CONFIG_MAP_TYPE_CONFIG,
