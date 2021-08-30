@@ -5,6 +5,7 @@ edition = "2018"
 license = "OSL-3.0"
 name = "stackable-monitoring-operator-server"
 version = "0.1.0-nightly"
+build = "build.rs"
 
 [dependencies]
 stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git", branch = "main" }
