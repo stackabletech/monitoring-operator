@@ -18,6 +18,10 @@ use strum_macros::EnumIter;
 pub const APP_NAME: &str = "monitoring";
 pub const MANAGED_BY: &str = "monitoring-operator";
 
+// directories
+pub const CONFIG_DIR: &str = "conf";
+pub const DATA_DIR: &str = "data";
+
 // pod and cluster (federation) metrics level
 pub const PROM_SCRAPE_INTERVAL: &str = "scrapeInterval";
 pub const PROM_SCRAPE_TIMEOUT: &str = "scrapeTimeout";
@@ -27,6 +31,8 @@ pub const PROM_SCHEME: &str = "scheme";
 // node metrics level
 pub const NODE_METRICS_PORT: &str = "nodeMetricsPort";
 pub const PROMETHEUS_CONFIG_YAML: &str = "prometheus.yaml";
+// config map types
+pub const CONFIG_MAP_TYPE_CONFIG: &str = "config";
 
 // TODO: We need to validate the name of the cluster because it is used in pod and configmap names, it can't bee too long
 // This probably also means we shouldn't use the node_names in the pod_name...
@@ -90,8 +96,22 @@ impl MonitoringClusterSpec {
                     return conf.cli_args.clone();
                 }
             }
-            MonitoringRole::Federation | MonitoringRole::NodeExporter => {
+            MonitoringRole::NodeExporter => {
                 if let Some(Role { role_groups, .. }) = &self.node_exporter {
+                    if let Some(RoleGroup {
+                        config:
+                            Some(CommonConfiguration {
+                                config: Some(conf), ..
+                            }),
+                        ..
+                    }) = role_groups.get(group)
+                    {
+                        return conf.cli_args.clone();
+                    }
+                }
+            }
+            MonitoringRole::Federation => {
+                if let Some(Role { role_groups, .. }) = &self.federation {
                     if let Some(RoleGroup {
                         config:
                             Some(CommonConfiguration {
@@ -287,12 +307,15 @@ impl MonitoringRole {
             MonitoringRole::PodAggregator | MonitoringRole::Federation => {
                 command.push(format!("--web.listen-address=:{}", port));
                 command.push(format!(
-                    "--config.file={{{{configroot}}}}/conf/{}",
-                    PROMETHEUS_CONFIG_YAML
+                    "--config.file={{{{configroot}}}}/{}/{}",
+                    CONFIG_DIR, PROMETHEUS_CONFIG_YAML
                 ));
                 command.push("--log.level debug".to_string());
                 if args.is_empty() {
-                    command.push("--storage.tsdb.path={{configroot}}/data/".to_string());
+                    command.push(format!(
+                        "--storage.tsdb.path={{{{configroot}}}}/{}/",
+                        DATA_DIR
+                    ));
                 } else {
                     command.extend(args);
                 }

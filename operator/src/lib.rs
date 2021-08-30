@@ -14,17 +14,14 @@ use crate::prometheus::{
     ConfigManager, FederationTemplateDataBuilder, PodAggregatorTemplateDataBuilder,
 };
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
-use kube::error::ErrorResponse;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringClusterStatus, MonitoringRole,
-    MonitoringVersion, APP_NAME, NODE_METRICS_PORT, PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
+    MonitoringVersion, APP_NAME, CONFIG_DIR, CONFIG_MAP_TYPE_CONFIG, NODE_METRICS_PORT,
+    PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
 };
-use stackable_operator::builder::{
-    ConfigMapBuilder, ContainerBuilder, ObjectMetaBuilder, PodBuilder,
-};
-use stackable_operator::cli;
+use stackable_operator::builder::{ContainerBuilder, ObjectMetaBuilder, PodBuilder};
 use stackable_operator::client::Client;
 use stackable_operator::conditions::ConditionStatus;
 use stackable_operator::controller::Controller;
@@ -36,16 +33,17 @@ use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels,
 };
 use stackable_operator::product_config_utils::{
-    transform_all_roles_to_config, validate_all_roles_and_groups_config,
+    config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
     ValidatedRoleConfigByPropertyKind,
 };
 use stackable_operator::reconcile::{
     ContinuationStrategy, ReconcileFunctionAction, ReconcileResult, ReconciliationContext,
 };
+use stackable_operator::role_utils;
 use stackable_operator::role_utils::{
     get_role_and_group_labels, list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
-use stackable_operator::{pod_utils, role_utils};
+use stackable_operator::{configmap, name_utils};
 use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
 use std::pin::Pin;
@@ -271,52 +269,6 @@ impl MonitoringState {
         Ok(ReconcileFunctionAction::Continue)
     }
 
-    /// Create or update a config map.
-    /// - Create if no config map of that name exists
-    /// - Update if config map exists but the content differs
-    /// - Do nothing if the config map exists and the content is identical
-    /// - Forward any kube errors that may appear
-    // TODO: move to operator-rs
-    async fn create_config_map(&self, config_map: ConfigMap) -> Result<(), Error> {
-        let cm_name = match config_map.metadata.name.as_deref() {
-            None => return Err(Error::InvalidConfigMap),
-            Some(name) => name,
-        };
-
-        match self
-            .context
-            .client
-            .get::<ConfigMap>(cm_name, Some(&self.context.namespace()))
-            .await
-        {
-            Ok(ConfigMap {
-                data: existing_config_map_data,
-                ..
-            }) if existing_config_map_data == config_map.data => {
-                debug!(
-                    "ConfigMap [{}] already exists with identical data, skipping creation!",
-                    cm_name
-                );
-            }
-            Ok(_) => {
-                debug!(
-                    "ConfigMap [{}] already exists, but differs, updating it!",
-                    cm_name
-                );
-                self.context.client.update(&config_map).await?;
-            }
-            Err(stackable_operator::error::Error::KubeError {
-                source: kube::error::Error::Api(ErrorResponse { reason, .. }),
-            }) if reason == "NotFound" => {
-                debug!("Error getting ConfigMap [{}]: [{:?}]", cm_name, reason);
-                self.context.client.create(&config_map).await?;
-            }
-            Err(e) => return Err(Error::OperatorError { source: e }),
-        }
-
-        Ok(())
-    }
-
     pub async fn create_missing_pods(&mut self) -> MonitoringReconcileResult {
         trace!("Starting `create_missing_pods`");
 
@@ -327,6 +279,7 @@ impl MonitoringState {
         //   - Role groups for this role (user defined)
         for monitoring_role in MonitoringRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&monitoring_role.to_string()) {
+                let role_str = &monitoring_role.to_string();
                 for (role_group, (nodes, replicas)) in nodes_for_role {
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
@@ -377,56 +330,30 @@ impl MonitoringState {
                             role_group
                         );
 
-                        // now we have a node that needs pods -> get validated config
-                        let validated_config = match self
-                            .validated_role_config
-                            .get(&monitoring_role.to_string())
-                        {
-                            None => {
-                                error!("Could not find combination of Role [{}] in product-config. This should not happen, please open a ticket.", monitoring_role.to_string());
-                                continue;
-                            }
-                            Some(role_groups) => match role_groups.get(role_group) {
-                                None => {
-                                    error!("Could not find combination of Role [{}] and RoleGroup [{}] in product-config. This should not happen, please open a ticket.", monitoring_role.to_string(), role_group);
-                                    continue;
-                                }
-                                Some(validated_config) => validated_config,
-                            },
-                        };
-
-                        let pod_name = pod_utils::get_pod_name(
-                            APP_NAME,
-                            &self.context.name(),
+                        // now we have a node that needs a pod -> get validated config
+                        let validated_config = config_for_role_and_group(
+                            role_str,
                             role_group,
-                            &monitoring_role.to_string(),
-                            node_name,
-                        );
+                            &self.validated_role_config,
+                        )?;
 
-                        let pod_labels = get_recommended_labels(
-                            &self.context.resource,
-                            APP_NAME,
-                            &self.context.resource.spec.version.to_string(),
-                            &monitoring_role.to_string(),
-                            role_group,
-                        );
-
-                        let (pod, config_maps) = self
-                            .create_pod_and_config_maps(
+                        let config_maps = self
+                            .create_config_maps(
                                 &monitoring_role,
                                 role_group,
                                 node_name,
-                                &pod_name,
-                                pod_labels,
                                 validated_config,
                             )
                             .await?;
 
-                        for config_map in config_maps {
-                            self.create_config_map(config_map).await?;
-                        }
-
-                        self.context.client.create(&pod).await?;
+                        self.create_pod(
+                            &monitoring_role,
+                            role_group,
+                            node_name,
+                            &config_maps,
+                            validated_config,
+                        )
+                        .await?;
 
                         return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
                     }
@@ -462,139 +389,212 @@ impl MonitoringState {
         Ok(ReconcileFunctionAction::Continue)
     }
 
-    async fn delete_all_pods(&self) -> OperatorResult<ReconcileFunctionAction> {
-        for pod in &self.existing_pods {
-            self.context.client.delete(pod).await?;
-        }
-        Ok(ReconcileFunctionAction::Done)
-    }
-
-    /// This method creates a pod and required config map(s) for a certain role and role_group.
-    /// The validated_config from the product-config is used to create the config map data, as
-    /// well as setting the ENV variables in the containers or adapt / expand the CLI parameters.
-    /// First we iterate through the validated_config and extract files (which represents one or
-    /// more config map(s)), env variables for the pod containers and cli parameters for the
-    /// container start command and arguments.
-    async fn create_pod_and_config_maps(
+    /// Creates the config maps required for a monitoring instance (or role, role_group combination):
+    /// * 'prometheus.yaml'
+    ///
+    /// The 'prometheus.yaml' properties are read from the product_config.
+    ///
+    /// Labels are automatically adapted from the `recommended_labels` with a type (config for
+    /// 'prometheus.yaml'). Names are generated via `name_utils::build_resource_name`.
+    ///
+    /// Returns a map with a 'type' identifier (e.g. config) as key and the corresponding
+    /// ConfigMap as value. This is required to set the volume mounts in the pod later on.
+    ///
+    /// # Arguments
+    ///
+    /// - `role` - The monitoring role.
+    /// - `group` - The role group.
+    /// - `node_name` - The node name for this instance.
+    /// - `validated_config` - The validated product config.
+    ///
+    async fn create_config_maps(
         &self,
         role: &MonitoringRole,
         group: &str,
         node_name: &str,
-        pod_name: &str,
-        labels: BTreeMap<String, String>,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
-    ) -> Result<(Pod, Vec<ConfigMap>), Error> {
-        let mut config_maps = vec![];
+    ) -> Result<HashMap<&'static str, ConfigMap>, Error> {
+        let mut config_maps = HashMap::new();
+        let role_str = &role.to_string();
+
+        let recommended_labels = get_recommended_labels(
+            &self.context.resource,
+            APP_NAME,
+            &self.context.resource.spec.version.to_string(),
+            role_str,
+            group,
+        );
+
+        if let Some(config) =
+            validated_config.get(&PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()))
+        {
+            // enhance with config map type label
+            let mut cm_properties_labels = recommended_labels;
+            cm_properties_labels.insert(
+                configmap::CONFIGMAP_TYPE_LABEL.to_string(),
+                CONFIG_MAP_TYPE_CONFIG.to_string(),
+            );
+
+            let mut content = String::new();
+
+            if &MonitoringRole::PodAggregator == role {
+                // extract node_exporter_metrics_port from node -> group -> config
+                let node_exporter_metrics_port =
+                    self.context.resource.spec.node_exporter_metrics_port(group);
+
+                content = ConfigManager::from_pod_aggregator_template(
+                    PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
+                        &self.context.client.default_namespace,
+                        node_name,
+                    )
+                    .with_config(config)
+                    .with_node_exporter(node_exporter_metrics_port)
+                    .with_node_exporter_labels(
+                        &self.context.name(),
+                        node_name,
+                        &self.context.namespace(),
+                    )
+                    .build(),
+                )?
+                .serialize()?;
+            } else if &MonitoringRole::Federation == role {
+                content = ConfigManager::from_federation_template(
+                    FederationTemplateDataBuilder::new_with_namespace(
+                        &self.context.client.default_namespace,
+                    )
+                    .with_config(config)
+                    .build(),
+                )?
+                .serialize()?;
+            }
+
+            let mut cm_properties_data = BTreeMap::new();
+            cm_properties_data.insert(PROMETHEUS_CONFIG_YAML.to_string(), content);
+
+            let cm_properties_name = name_utils::build_resource_name(
+                APP_NAME,
+                &self.context.name(),
+                role_str,
+                Some(group),
+                None,
+                Some(CONFIG_MAP_TYPE_CONFIG),
+            )?;
+
+            let cm_config = configmap::build_config_map(
+                &self.context.resource,
+                &cm_properties_name,
+                &self.context.namespace(),
+                cm_properties_labels,
+                cm_properties_data,
+            )?;
+
+            config_maps.insert(
+                CONFIG_MAP_TYPE_CONFIG,
+                configmap::create_config_map(&self.context.client, cm_config).await?,
+            );
+        }
+
+        Ok(config_maps)
+    }
+
+    /// Creates the pod required for the monitoring instance.
+    ///
+    /// # Arguments
+    ///
+    /// - `role` - The monitoring role.
+    /// - `group` - The role group.
+    /// - `node_name` - The node name for this pod.
+    /// - `config_maps` - The config maps and respective types required for this pod.
+    /// - `validated_config` - The validated product config.
+    ///
+    async fn create_pod(
+        &self,
+        role: &MonitoringRole,
+        group: &str,
+        node_name: &str,
+        config_maps: &HashMap<&'static str, ConfigMap>,
+        validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
+    ) -> Result<Pod, Error> {
         let mut env_vars = vec![];
         // TODO: use product-config default ports?
         let mut scrape_port = "9090";
+        let role_str = &role.to_string();
 
-        let cm_config_name = format!("{}-config", pod_name);
-
-        for (property_name_kind, config) in validated_config {
-            match property_name_kind {
-                PropertyNameKind::File(file_name) => {
-                    if file_name.as_str() != PROMETHEUS_CONFIG_YAML {
-                        continue;
-                    }
-
-                    let mut content = String::new();
-
-                    if &MonitoringRole::PodAggregator == role {
-                        // extract node_exporter_metrics_port from node -> group -> config
-                        let node_exporter_metrics_port =
-                            self.context.resource.spec.node_exporter_metrics_port(group);
-
-                        content = ConfigManager::from_pod_aggregator_template(
-                            PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
-                                &self.context.client.default_namespace,
-                                node_name,
-                            )
-                            .with_config(config)
-                            .with_node_exporter(node_exporter_metrics_port)
-                            .with_node_exporter_labels(
-                                &self.context.name(),
-                                node_name,
-                                &self.context.namespace(),
-                            )
-                            .build(),
-                        )?
-                        .serialize()?;
-                    } else if &MonitoringRole::Federation == role {
-                        content = ConfigManager::from_federation_template(
-                            FederationTemplateDataBuilder::new_with_namespace(
-                                &self.context.client.default_namespace,
-                            )
-                            .with_config(config)
-                            .build(),
-                        )?
-                        .serialize()?;
-                    }
-
-                    let mut cm_config_data = BTreeMap::new();
-                    cm_config_data.insert(file_name.clone(), content);
-
-                    config_maps.push(
-                        ConfigMapBuilder::new()
-                            .metadata(
-                                ObjectMetaBuilder::new()
-                                    .name(cm_config_name.clone())
-                                    .ownerreference_from_resource(
-                                        &self.context.resource,
-                                        Some(true),
-                                        Some(true),
-                                    )?
-                                    .namespace(&self.context.client.default_namespace)
-                                    .build()?,
-                            )
-                            .data(cm_config_data)
-                            .build()?,
-                    );
+        // extract env variables
+        if let Some(config) = validated_config.get(&PropertyNameKind::Env) {
+            for (property_name, property_value) in config {
+                if property_name.is_empty() {
+                    warn!("Received empty property_name for ENV... skipping");
+                    continue;
                 }
-                PropertyNameKind::Env => {
-                    for (property_name, property_value) in config {
-                        if property_name.is_empty() {
-                            warn!("Received empty property_name for ENV... skipping");
-                            continue;
-                        }
 
-                        env_vars.push(EnvVar {
-                            name: property_name.clone(),
-                            value: Some(property_value.clone()),
-                            value_from: None,
-                        });
-                    }
-                }
-                PropertyNameKind::Cli => {
-                    if let Some(port) = config.get(PROM_WEB_UI_PORT) {
-                        scrape_port = port
-                    } else if let Some(port) = config.get(NODE_METRICS_PORT) {
-                        scrape_port = port
-                    }
-                }
+                env_vars.push(EnvVar {
+                    name: property_name.clone(),
+                    value: Some(property_value.to_string()),
+                    value_from: None,
+                });
             }
         }
 
+        // extract cli parameters
+        if let Some(config) = validated_config.get(&PropertyNameKind::Cli) {
+            if let Some(port) = config.get(PROM_WEB_UI_PORT) {
+                scrape_port = port
+            } else if let Some(port) = config.get(NODE_METRICS_PORT) {
+                scrape_port = port
+            }
+        }
+
+        let pod_name = name_utils::build_resource_name(
+            APP_NAME,
+            &self.context.name(),
+            role_str,
+            Some(group),
+            Some(node_name),
+            None,
+        )?;
+
         let version = &self.context.resource.spec.version;
+        let labels = get_recommended_labels(
+            &self.context.resource,
+            APP_NAME,
+            &version.to_string(),
+            role_str,
+            group,
+        );
 
         let cli_args = self.context.resource.spec.cli_args(role, group);
 
-        let mut cb = ContainerBuilder::new("monitoring");
+        let mut cb = ContainerBuilder::new(APP_NAME);
         cb.image(role.image(version));
         cb.command(role.command(version));
         cb.args(role.args(scrape_port, cli_args));
-
-        // TODO: add data volume
-        if role != &MonitoringRole::NodeExporter {
-            cb.add_configmapvolume(cm_config_name, "conf".to_string());
-        }
         cb.add_env_vars(env_vars);
         cb.add_container_ports(role.container_ports(scrape_port)?);
+
+        // One mount for the config directory
+        // TODO: add data volume
+        if role != &MonitoringRole::NodeExporter {
+            if let Some(config_map_data) = config_maps.get(CONFIG_MAP_TYPE_CONFIG) {
+                if let Some(name) = config_map_data.metadata.name.as_ref() {
+                    cb.add_configmapvolume(name, CONFIG_DIR.to_string());
+                } else {
+                    return Err(error::Error::MissingConfigMapNameError {
+                        cm_type: CONFIG_MAP_TYPE_CONFIG,
+                    });
+                }
+            } else {
+                return Err(error::Error::MissingConfigMapError {
+                    cm_type: CONFIG_MAP_TYPE_CONFIG,
+                    pod_name,
+                });
+            }
+        }
 
         let pod = PodBuilder::new()
             .metadata(
                 ObjectMetaBuilder::new()
-                    .name(pod_name)
+                    .generate_name(pod_name)
                     .namespace(&self.context.client.default_namespace)
                     .with_labels(labels)
                     .ownerreference_from_resource(&self.context.resource, Some(true), Some(true))?
@@ -605,7 +605,14 @@ impl MonitoringState {
             .node_name(node_name)
             .build()?;
 
-        Ok((pod, config_maps))
+        Ok(self.context.client.create(&pod).await?)
+    }
+
+    async fn delete_all_pods(&self) -> OperatorResult<ReconcileFunctionAction> {
+        for pod in &self.existing_pods {
+            self.context.client.delete(pod).await?;
+        }
+        Ok(ReconcileFunctionAction::Done)
     }
 }
 
@@ -770,7 +777,7 @@ impl ControllerStrategy for MonitoringStrategy {
 /// This creates an instance of a [`Controller`] which waits for incoming events and reconciles them.
 ///
 /// This is an async method and the returned future needs to be consumed to make progress.
-pub async fn create_controller(client: Client) -> OperatorResult<()> {
+pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
     let monitoring_api: Api<MonitoringCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
@@ -779,15 +786,7 @@ pub async fn create_controller(client: Client) -> OperatorResult<()> {
         .owns(pods_api, ListParams::default())
         .owns(config_maps_api, ListParams::default());
 
-    let product_config_path = cli::product_config_path(
-        "monitoring-operator",
-        vec![
-            "deploy/config-spec/properties.yaml",
-            "/etc/stackable/monitoring-operator/config-spec/properties.yaml",
-        ],
-    )?;
-
-    let product_config = ProductConfigManager::from_yaml_file(&product_config_path).unwrap();
+    let product_config = ProductConfigManager::from_yaml_file(product_config_path).unwrap();
 
     let strategy = MonitoringStrategy::new(product_config);
 
