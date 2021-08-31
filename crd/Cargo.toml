@@ -4,6 +4,7 @@ description = "Stackable Monitoring Operator structs and utilities"
 edition = "2018"
 license = "OSL-3.0"
 name = "stackable-monitoring-crd"
+repository = "https://github.com/stackabletech/monitoring-operator"
 version = "0.1.0-nightly"
 
 [dependencies]
