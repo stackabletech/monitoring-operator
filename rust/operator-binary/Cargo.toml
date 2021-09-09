@@ -4,7 +4,7 @@ build = "build.rs"
 description = "Stackable Monitoring Operator"
 edition = "2018"
 license = "OSL-3.0"
-name = "stackable-monitoring-operator-server"
+name = "stackable-monitoring-operator-binary"
 repository = "https://github.com/stackabletech/monitoring-operator"
 version = "0.2.0-nightly"
 
@@ -26,9 +26,13 @@ stackable-monitoring-crd = { path = "../crd" }
 
 [package.metadata.deb]
 maintainer-scripts = "packaging/debian/"
-systemd-units = { enable = false }
+systemd-units = { enable = false, unit-name = "stackable-monitoring-operator" }
 assets = [
-    ["../target/release/stackable-monitoring-operator-server", "opt/stackable/monitoring-operator/", "755"],
-    ["../deploy/crd/monitoringcluster.crd.yaml", "etc/stackable/monitoring-operator/crd/", "644"],
-    ["../deploy/config-spec/properties.yaml", "etc/stackable/monitoring-operator/config-spec/", "644"],
+    ["../../target/release/stackable-monitoring-operator", "opt/stackable/monitoring-operator/", "755"],
+    ["../../deploy/crd/monitoringcluster.crd.yaml", "etc/stackable/monitoring-operator/crd/", "644"],
+    ["../../deploy/config-spec/properties.yaml", "etc/stackable/monitoring-operator/config-spec/", "644"],
 ]
+
+[[bin]]
+name = "stackable-monitoring-operator"
+path = "src/stackable-monitoring-operator.rs"
