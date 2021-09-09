@@ -26,7 +26,7 @@ stackable-monitoring-crd = { path = "../crd" }
 
 [package.metadata.deb]
 name = "stackable-monitoring-operator"
-maintainer-scripts = "packaging/debian/"
+maintainer-scripts = "../../packaging/debian/"
 systemd-units = { enable = false, unit-name = "stackable-monitoring-operator" }
 assets = [
     ["../../target/release/stackable-monitoring-operator", "opt/stackable/monitoring-operator/", "755"],
