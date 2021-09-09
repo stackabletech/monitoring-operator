@@ -25,6 +25,7 @@ stackable-operator = { git = "https://github.com/stackabletech/operator-rs.git",
 stackable-monitoring-crd = { path = "../crd" }
 
 [package.metadata.deb]
+name = "stackable-monitoring-operator"
 maintainer-scripts = "packaging/debian/"
 systemd-units = { enable = false, unit-name = "stackable-monitoring-operator" }
 assets = [
