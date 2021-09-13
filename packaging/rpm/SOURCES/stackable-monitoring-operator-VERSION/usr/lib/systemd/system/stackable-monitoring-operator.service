@@ -1,5 +1,5 @@
 [Unit]
-Description=Stackable Monitoring Operator
+Description=Stackable Operator for Monitoring
 Before=
 After=network.target
 [Service]
