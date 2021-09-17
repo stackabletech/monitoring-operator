@@ -5,12 +5,14 @@ use k8s_openapi::api::core::v1::ContainerPort;
 use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
 use kube::CustomResource;
 use schemars::JsonSchema;
-use semver::{Error as SemVerError, Version};
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use stackable_operator::builder::ContainerPortBuilder;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::{CommonConfiguration, Role, RoleGroup};
-use stackable_operator::status::Conditions;
+use stackable_operator::status::{Conditions, Status, Versioned};
+use stackable_operator::versioning::{ProductVersion, Versioning, VersioningState};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use strum_macros::Display;
 use strum_macros::EnumIter;
@@ -52,6 +54,15 @@ pub struct MonitoringClusterSpec {
     pub pod_aggregator: Role<PodMonitoringConfig>,
     pub node_exporter: Option<Role<NodeMonitoringConfig>>,
     pub federation: Option<Role<PodMonitoringConfig>>,
+}
+
+impl Status<MonitoringClusterStatus> for MonitoringCluster {
+    fn status(&self) -> &Option<MonitoringClusterStatus> {
+        &self.status
+    }
+    fn status_mut(&mut self) -> &mut Option<MonitoringClusterStatus> {
+        &mut self.status
+    }
 }
 
 impl MonitoringClusterSpec {
@@ -244,23 +255,6 @@ impl Configuration for NodeMonitoringConfig {
     }
 }
 
-impl Conditions for MonitoringCluster {
-    fn conditions(&self) -> Option<&[Condition]> {
-        if let Some(status) = &self.status {
-            return Some(status.conditions.as_slice());
-        }
-        None
-    }
-
-    fn conditions_mut(&mut self) -> &mut Vec<Condition> {
-        if self.status.is_none() {
-            self.status = Some(MonitoringClusterStatus::default());
-            return &mut self.status.as_mut().unwrap().conditions;
-        }
-        return &mut self.status.as_mut().unwrap().conditions;
-    }
-}
-
 #[derive(EnumIter, Debug, Display, PartialEq, Eq, Hash)]
 pub enum MonitoringRole {
     /// The (pod-level) metrics aggregator. One per node required.
@@ -379,35 +373,105 @@ pub enum MonitoringVersion {
     #[serde(rename = "2.28.1")]
     #[strum(serialize = "2.28.1")]
     v2_28_1,
+    #[serde(rename = "2.30.0")]
+    #[strum(serialize = "2.30.0")]
+    v2_30_0,
 }
 
 impl MonitoringVersion {
     pub fn node_exporter(&self) -> &'static str {
         match self {
-            MonitoringVersion::v2_28_1 => "1.2.0",
+            MonitoringVersion::v2_28_1 | MonitoringVersion::v2_30_0 => "1.2.0",
         }
     }
 }
 
-impl MonitoringVersion {
-    pub fn is_valid_upgrade(&self, to: &Self) -> Result<bool, SemVerError> {
-        let from_version = Version::parse(&self.to_string())?;
-        let to_version = Version::parse(&to.to_string())?;
-        Ok(to_version > from_version)
+impl Versioning for MonitoringVersion {
+    fn versioning_state(&self, other: &Self) -> VersioningState {
+        let from_version = match Version::parse(&self.to_string()) {
+            Ok(v) => v,
+            Err(e) => {
+                return VersioningState::Invalid(format!(
+                    "Could not parse [{}] to SemVer: {}",
+                    self.to_string(),
+                    e.to_string()
+                ))
+            }
+        };
+
+        let to_version = match Version::parse(&other.to_string()) {
+            Ok(v) => v,
+            Err(e) => {
+                return VersioningState::Invalid(format!(
+                    "Could not parse [{}] to SemVer: {}",
+                    other.to_string(),
+                    e.to_string()
+                ))
+            }
+        };
+
+        match to_version.cmp(&from_version) {
+            Ordering::Greater => VersioningState::ValidUpgrade,
+            Ordering::Less => VersioningState::ValidDowngrade,
+            Ordering::Equal => VersioningState::NoOp,
+        }
     }
 }
 
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringClusterStatus {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_version: Option<MonitoringVersion>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub target_version: Option<MonitoringVersion>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(schema_with = "stackable_operator::conditions::schema")]
     pub conditions: Vec<Condition>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<ProductVersion<MonitoringVersion>>,
+}
+
+impl Versioned<MonitoringVersion> for MonitoringClusterStatus {
+    fn version(&self) -> &Option<ProductVersion<MonitoringVersion>> {
+        &self.version
+    }
+    fn version_mut(&mut self) -> &mut Option<ProductVersion<MonitoringVersion>> {
+        &mut self.version
+    }
+}
+
+impl Conditions for MonitoringClusterStatus {
+    fn conditions(&self) -> &[Condition] {
+        self.conditions.as_slice()
+    }
+    fn conditions_mut(&mut self) -> &mut Vec<Condition> {
+        &mut self.conditions
+    }
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use crate::MonitoringVersion;
+    use stackable_operator::versioning::{Versioning, VersioningState};
+    use std::str::FromStr;
+
+    #[test]
+    fn test_zookeeper_version_versioning() {
+        assert_eq!(
+            MonitoringVersion::v2_28_1.versioning_state(&MonitoringVersion::v2_30_0),
+            VersioningState::ValidUpgrade
+        );
+        assert_eq!(
+            MonitoringVersion::v2_30_0.versioning_state(&MonitoringVersion::v2_28_1),
+            VersioningState::ValidDowngrade
+        );
+        assert_eq!(
+            MonitoringVersion::v2_28_1.versioning_state(&MonitoringVersion::v2_28_1),
+            VersioningState::NoOp
+        );
+    }
+
+    #[test]
+    fn test_version_conversion() {
+        MonitoringVersion::from_str("2.28.1").unwrap();
+        MonitoringVersion::from_str("2.30.0").unwrap();
+        MonitoringVersion::from_str("1.2.3").unwrap_err();
+    }
+}

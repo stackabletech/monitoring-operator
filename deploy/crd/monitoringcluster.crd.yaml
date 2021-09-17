@@ -406,6 +406,7 @@ spec:
                 version:
                   enum:
                     - 2.28.1
+                    - 2.30.0
                   type: string
               required:
                 - podAggregator
@@ -454,16 +455,23 @@ spec:
                   x-kubernetes-list-map-keys:
                     - type
                   x-kubernetes-list-type: map
-                currentVersion:
-                  enum:
-                    - 2.28.1
+                version:
+                  description: The version of the product provided by the operator. Split into current and target version in order track upgrading and downgrading progress.
                   nullable: true
-                  type: string
-                targetVersion:
-                  enum:
-                    - 2.28.1
-                  nullable: true
-                  type: string
+                  properties:
+                    current:
+                      enum:
+                        - 2.28.1
+                        - 2.30.0
+                      nullable: true
+                      type: string
+                    target:
+                      enum:
+                        - 2.28.1
+                        - 2.30.0
+                      nullable: true
+                      type: string
+                  type: object
               type: object
           required:
             - spec
