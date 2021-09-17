@@ -106,15 +106,16 @@ impl MonitoringState {
         for monitoring_role in MonitoringRole::iter() {
             if let Some(nodes_for_role) = self.eligible_nodes.get(&monitoring_role.to_string()) {
                 let role_str = &monitoring_role.to_string();
-                for (role_group, (nodes, replicas)) in nodes_for_role {
+                for (role_group, eligible_nodes) in nodes_for_role {
                     debug!(
                         "Identify missing pods for [{}] role and group [{}]",
                         monitoring_role, role_group
                     );
                     trace!(
                         "candidate_nodes[{}]: [{:?}]",
-                        nodes.len(),
-                        nodes
+                        eligible_nodes.nodes.len(),
+                        eligible_nodes
+                            .nodes
                             .iter()
                             .map(|node| node.metadata.name.as_ref().unwrap())
                             .collect::<Vec<_>>()
@@ -133,10 +134,10 @@ impl MonitoringState {
                         get_role_and_group_labels(&monitoring_role.to_string(), role_group)
                     );
                     let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
-                        nodes,
+                        &eligible_nodes.nodes,
                         &self.existing_pods,
                         &get_role_and_group_labels(&monitoring_role.to_string(), role_group),
-                        *replicas,
+                        eligible_nodes.replicas,
                     );
 
                     for node in nodes_that_need_pods {
