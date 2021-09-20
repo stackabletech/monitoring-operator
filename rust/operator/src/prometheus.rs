@@ -3,9 +3,9 @@
 //! Provides structs and methods to serialize and deserialize a Prometheus yaml configuration:
 //!
 //! * Supports [`ScrapeJob`] for scraping targets and [`Global`] configuration.
-//! * Supports [`KubernetesSdConfigs`], [`StaticSdConfigs`] for Service Discovery
-//! * Supports security abstraction with [`TlsConfig`], [`OAuth2`] or [`BasicAuthentication`]
-//! * Supports [`RelabelConfigs`] with all [`Action`], regex, replacements etc.
+//! * Supports [`KubernetesSdConfig`], [`StaticSdConfig`] for Service Discovery
+//! * Supports security abstraction with [`TlsConfig`], [`OAuth2`] or [`BasicAuth`]
+//! * Supports [`RelabelConfig`] with all [`Action`], regex, replacements etc.
 //! * Supports other common configuration options like proxy, http or https scheme etc.
 //!
 //! Offers builders to dynamically create a valid and checked Prometheus configuration.

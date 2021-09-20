@@ -52,9 +52,6 @@ pub enum Error {
         source: product_config::error::Error,
     },
 
-    #[error("Error during reconciliation: {0}")]
-    ReconcileError(String),
-
     #[error("Error from serde_json: {source}")]
     SerdeError {
         #[from]
