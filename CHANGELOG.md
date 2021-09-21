@@ -8,10 +8,16 @@ All notable changes to this project will be documented in this file.
 - Added versioning code from operator-rs for up and downgrades ([#55]).
 - Added `ProductVersion` to status ([#55]).
 
+### Changed:
+- `kube-rs`: `0.59` → `0.60` ([#55]).
+- `k8s-openapi` features: `v1_21` → `v1_22` ([#55]).
+- `operator-rs` `0.2.1` → `0.2.2` ([#55]).
+
 ### Removed
 - Code for version handling ([#55]).
 - Removed `current_version` and `target_version` from cluster status ([#55]).
 
+[#61]: https://github.com/stackabletech/monitoring-operator/pull/61
 [#55]: https://github.com/stackabletech/monitoring-operator/pull/55
 
 ## [0.2.0] - 2021-09-14
