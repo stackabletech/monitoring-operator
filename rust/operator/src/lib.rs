@@ -2,16 +2,15 @@ mod error;
 mod prometheus;
 
 use crate::error::Error;
+use crate::prometheus::{
+    ConfigManager, FederationTemplateDataBuilder, PodAggregatorTemplateDataBuilder,
+};
 
 use async_trait::async_trait;
 use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
 use kube::api::{ListParams, ResourceExt};
 use kube::Api;
-use tracing::{debug, error, info, trace, warn};
-
-use crate::prometheus::{
-    ConfigManager, FederationTemplateDataBuilder, PodAggregatorTemplateDataBuilder,
-};
+use kube::CustomResourceExt;
 use product_config::types::PropertyNameKind;
 use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
@@ -48,6 +47,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use strum::IntoEnumIterator;
+use tracing::{debug, error, info, trace, warn};
 
 const FINALIZER_NAME: &str = "monitoring.stackable.tech/cleanup";
 
@@ -585,6 +585,18 @@ impl ControllerStrategy for MonitoringStrategy {
 ///
 /// This is an async method and the returned future needs to be consumed to make progress.
 pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
+    // This will wait for (but not create) all CRDs we need.
+    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
+        &client,
+        vec![MonitoringCluster::crd_name()],
+        None,
+    )
+    .await
+    {
+        error!("Required CRDs missing, aborting: {:?}", error);
+        return Err(error);
+    };
+
     let monitoring_api: Api<MonitoringCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();
