@@ -9,9 +9,9 @@ All notable changes to this project will be documented in this file.
 - Added `ProductVersion` to status ([#55]).
 
 ### Changed:
-- `kube-rs`: `0.59` → `0.60` ([#55]).
-- `k8s-openapi` features: `v1_21` → `v1_22` ([#55]).
-- `operator-rs` `0.2.1` → `0.2.2` ([#55]).
+- `kube-rs`: `0.59` → `0.60` ([#60]).
+- `k8s-openapi` `0.12` → `0.13` and features: `v1_21` → `v1_22` ([#60]).
+- `operator-rs` `0.2.1` → `0.2.2` ([#60]).
 
 ### Removed
 - Code for version handling ([#55]).
