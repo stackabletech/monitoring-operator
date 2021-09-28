@@ -39,7 +39,7 @@ exceptions = [
     { name = "stackable-monitoring-crd", allow = ["OSL-3.0"] },
     { name = "stackable-monitoring-operator", allow = ["OSL-3.0"] },
     { name = "stackable-monitoring-operator-binary", allow = ["OSL-3.0"] },
-]
+    ]
 
 [[licenses.clarify]]
 name = "ring"
