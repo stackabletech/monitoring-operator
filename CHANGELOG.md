@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Added versioning code from operator-rs for up and downgrades ([#55]).
 - Added `ProductVersion` to status ([#55]).
+- Use sticky scheduler ([#67])
 
 ### Changed:
 - `kube-rs`: `0.59` → `0.60` ([#61]).
@@ -19,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 [#61]: https://github.com/stackabletech/monitoring-operator/pull/61
 [#55]: https://github.com/stackabletech/monitoring-operator/pull/55
+[#67]: https://github.com/stackabletech/monitoring-operator/pull/67
 
 ## [0.2.0] - 2021-09-14
 
