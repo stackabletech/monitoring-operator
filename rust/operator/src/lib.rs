@@ -194,13 +194,13 @@ impl MonitoringState {
                         )?;
 
                         let config_maps = self
-                            .create_config_maps(pod_id, node_id, &monitoring_role, validated_config)
+                            .create_config_maps(&monitoring_role, pod_id, node_id, validated_config)
                             .await?;
 
                         self.create_pod(
                             &monitoring_role,
-                            role_group,
-                            node_id.name.as_str(),
+                            pod_id,
+                            node_id,
                             &config_maps,
                             validated_config,
                         )
@@ -295,21 +295,20 @@ impl MonitoringState {
     ///
     async fn create_config_maps(
         &self,
+        role: &MonitoringRole,
         pod_id: &PodIdentity,
         node_id: &NodeIdentity,
-        role: &MonitoringRole,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     ) -> Result<HashMap<&'static str, ConfigMap>, Error> {
         let mut config_maps = HashMap::new();
 
-        let mut recommended_labels = get_recommended_labels(
+        let recommended_labels = get_recommended_labels(
             &self.context.resource,
             pod_id.app(),
             &self.context.resource.spec.version.to_string(),
             pod_id.role(),
             pod_id.group(),
         );
-        recommended_labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
         if let Some(config) =
             validated_config.get(&PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()))
@@ -399,15 +398,14 @@ impl MonitoringState {
     async fn create_pod(
         &self,
         role: &MonitoringRole,
-        group: &str,
-        node_name: &str,
+        pod_id: &PodIdentity,
+        node_id: &NodeIdentity,
         config_maps: &HashMap<&'static str, ConfigMap>,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     ) -> Result<Pod, Error> {
         let mut env_vars = vec![];
         // TODO: use product-config default ports?
         let mut scrape_port = "9090";
-        let role_str = &role.to_string();
 
         // extract env variables
         if let Some(config) = validated_config.get(&PropertyNameKind::Env) {
@@ -435,26 +433,27 @@ impl MonitoringState {
         }
 
         let pod_name = name_utils::build_resource_name(
-            APP_NAME,
-            &self.context.name(),
-            role_str,
-            Some(group),
-            Some(node_name),
+            pod_id.app(),
+            pod_id.instance(),
+            pod_id.role(),
+            Some(pod_id.group()),
+            Some(node_id.name.as_str()),
             None,
         )?;
 
         let version = &self.context.resource.spec.version;
-        let labels = get_recommended_labels(
+        let mut labels = get_recommended_labels(
             &self.context.resource,
-            APP_NAME,
+            pod_id.app(),
             &version.to_string(),
-            role_str,
-            group,
+            pod_id.role(),
+            pod_id.group(),
         );
+        labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
-        let cli_args = self.context.resource.spec.cli_args(role, group);
+        let cli_args = self.context.resource.spec.cli_args(role, pod_id.group());
 
-        let mut cb = ContainerBuilder::new(APP_NAME);
+        let mut cb = ContainerBuilder::new(pod_id.app());
         cb.image(role.image(version));
         cb.command(role.command(version));
         cb.args(role.args(scrape_port, cli_args));
@@ -491,7 +490,7 @@ impl MonitoringState {
             )
             .add_stackable_agent_tolerations()
             .add_container(cb.build())
-            .node_name(node_name)
+            .node_name(node_id.name.as_str())
             .build()?;
 
         Ok(self.context.client.create(&pod).await?)
