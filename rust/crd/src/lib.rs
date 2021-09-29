@@ -8,6 +8,7 @@ use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use stackable_operator::builder::ContainerPortBuilder;
+use stackable_operator::identity::PodToNodeMapping;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::{CommonConfiguration, Role, RoleGroup};
 use stackable_operator::status::{Conditions, Status, Versioned};
@@ -425,6 +426,8 @@ pub struct MonitoringClusterStatus {
     pub conditions: Vec<Condition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<ProductVersion<MonitoringVersion>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history: Option<PodToNodeMapping>,
 }
 
 impl Versioned<MonitoringVersion> for MonitoringClusterStatus {

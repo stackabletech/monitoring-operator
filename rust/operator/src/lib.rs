@@ -22,7 +22,9 @@ use stackable_operator::client::Client;
 use stackable_operator::controller::Controller;
 use stackable_operator::controller::{ControllerStrategy, ReconciliationState};
 use stackable_operator::error::OperatorResult;
-use stackable_operator::k8s_utils;
+use stackable_operator::identity::{
+    LabeledPodIdentityFactory, NodeIdentity, PodIdentity, PodToNodeMapping,
+};
 use stackable_operator::labels;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels,
@@ -38,6 +40,9 @@ use stackable_operator::role_utils;
 use stackable_operator::role_utils::{
     get_role_and_group_labels, list_eligible_nodes_for_role_and_group, EligibleNodesForRoleAndGroup,
 };
+use stackable_operator::scheduler::{
+    K8SUnboundedHistory, RoleGroupEligibleNodes, ScheduleStrategy, Scheduler, StickyScheduler,
+};
 use stackable_operator::status::init_status;
 use stackable_operator::versioning::{finalize_versioning, init_versioning};
 use stackable_operator::{configmap, name_utils};
@@ -50,6 +55,7 @@ use strum::IntoEnumIterator;
 use tracing::{debug, error, info, trace, warn};
 
 const FINALIZER_NAME: &str = "monitoring.stackable.tech/cleanup";
+const ID_LABEL: &str = "monitoring.stackable.tech/id";
 
 type MonitoringReconcileResult = ReconcileResult<error::Error>;
 
@@ -133,6 +139,78 @@ impl MonitoringState {
                         "labels: [{:?}]",
                         get_role_and_group_labels(&monitoring_role.to_string(), role_group)
                     );
+
+                    let mut history = match self
+                        .context
+                        .resource
+                        .status
+                        .as_ref()
+                        .and_then(|status| status.history.as_ref())
+                    {
+                        Some(simple_history) => {
+                            // we clone here because we cannot access mut self because we need it later
+                            // to create config maps and pods. The `status` history will be out of sync
+                            // with the cloned `simple_history` until the next reconcile.
+                            // The `status` history should not be used after this method to avoid side
+                            // effects.
+                            K8SUnboundedHistory::new(&self.context.client, simple_history.clone())
+                        }
+                        None => K8SUnboundedHistory::new(
+                            &self.context.client,
+                            PodToNodeMapping::default(),
+                        ),
+                    };
+
+                    let mut sticky_scheduler =
+                        StickyScheduler::new(&mut history, ScheduleStrategy::GroupAntiAffinity);
+
+                    let pod_id_factory = LabeledPodIdentityFactory::new(
+                        APP_NAME,
+                        &self.context.name(),
+                        &self.eligible_nodes,
+                        ID_LABEL,
+                        1,
+                    );
+
+                    let state = sticky_scheduler.schedule(
+                        &pod_id_factory,
+                        &RoleGroupEligibleNodes::from(&self.eligible_nodes),
+                        &self.existing_pods,
+                    )?;
+
+                    let mapping = state.remaining_mapping().filter(
+                        APP_NAME,
+                        &self.context.name(),
+                        role_str,
+                        role_group,
+                    );
+
+                    if let Some((pod_id, node_id)) = mapping.iter().next() {
+                        // now we have a node that needs a pod -> get validated config
+                        let validated_config = config_for_role_and_group(
+                            pod_id.role(),
+                            pod_id.group(),
+                            &self.validated_role_config,
+                        )?;
+
+                        let config_maps = self
+                            .create_config_maps(pod_id, node_id, &monitoring_role, validated_config)
+                            .await?;
+
+                        self.create_pod(
+                            &monitoring_role,
+                            role_group,
+                            node_id.name.as_str(),
+                            &config_maps,
+                            validated_config,
+                        )
+                        .await?;
+
+                        history.save(&self.context.resource).await?;
+
+                        return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
+                    }
+                    /*
                     let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
                         &eligible_nodes.nodes,
                         &self.existing_pods,
@@ -184,6 +262,7 @@ impl MonitoringState {
 
                         return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
                     }
+                    */
                 }
             }
         }
@@ -209,28 +288,28 @@ impl MonitoringState {
     ///
     /// # Arguments
     ///
+    /// - `pod_id` - The pod id for which to create config maps.
+    /// - `node_id` - The node id where the pod will be placed.
     /// - `role` - The monitoring role.
-    /// - `group` - The role group.
-    /// - `node_name` - The node name for this instance.
     /// - `validated_config` - The validated product config.
     ///
     async fn create_config_maps(
         &self,
+        pod_id: &PodIdentity,
+        node_id: &NodeIdentity,
         role: &MonitoringRole,
-        group: &str,
-        node_name: &str,
         validated_config: &HashMap<PropertyNameKind, BTreeMap<String, String>>,
     ) -> Result<HashMap<&'static str, ConfigMap>, Error> {
         let mut config_maps = HashMap::new();
-        let role_str = &role.to_string();
 
-        let recommended_labels = get_recommended_labels(
+        let mut recommended_labels = get_recommended_labels(
             &self.context.resource,
-            APP_NAME,
+            pod_id.app(),
             &self.context.resource.spec.version.to_string(),
-            role_str,
-            group,
+            pod_id.role(),
+            pod_id.group(),
         );
+        recommended_labels.insert(String::from(ID_LABEL), String::from(pod_id.id()));
 
         if let Some(config) =
             validated_config.get(&PropertyNameKind::File(PROMETHEUS_CONFIG_YAML.to_string()))
@@ -246,19 +325,22 @@ impl MonitoringState {
 
             if &MonitoringRole::PodAggregator == role {
                 // extract node_exporter_metrics_port from node -> group -> config
-                let node_exporter_metrics_port =
-                    self.context.resource.spec.node_exporter_metrics_port(group);
+                let node_exporter_metrics_port = self
+                    .context
+                    .resource
+                    .spec
+                    .node_exporter_metrics_port(pod_id.group());
 
                 content = ConfigManager::from_pod_aggregator_template(
                     PodAggregatorTemplateDataBuilder::new_with_namespace_and_node_name(
                         &self.context.client.default_namespace,
-                        node_name,
+                        node_id.name.as_str(),
                     )
                     .with_config(config)
                     .with_node_exporter(node_exporter_metrics_port)
                     .with_node_exporter_labels(
-                        &self.context.name(),
-                        node_name,
+                        pod_id.instance(),
+                        node_id.name.as_str(),
                         &self.context.namespace(),
                     )
                     .build(),
@@ -279,10 +361,10 @@ impl MonitoringState {
             cm_properties_data.insert(PROMETHEUS_CONFIG_YAML.to_string(), content);
 
             let cm_properties_name = name_utils::build_resource_name(
-                APP_NAME,
-                &self.context.name(),
-                role_str,
-                Some(group),
+                pod_id.app(),
+                pod_id.instance(),
+                pod_id.role(),
+                Some(pod_id.group()),
                 None,
                 Some(CONFIG_MAP_TYPE_CONFIG),
             )?;
