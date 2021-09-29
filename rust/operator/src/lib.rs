@@ -210,59 +210,6 @@ impl MonitoringState {
 
                         return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
                     }
-                    /*
-                    let nodes_that_need_pods = k8s_utils::find_nodes_that_need_pods(
-                        &eligible_nodes.nodes,
-                        &self.existing_pods,
-                        &get_role_and_group_labels(&monitoring_role.to_string(), role_group),
-                        eligible_nodes.replicas,
-                    );
-
-                    for node in nodes_that_need_pods {
-                        let node_name = if let Some(node_name) = &node.metadata.name {
-                            node_name
-                        } else {
-                            warn!("No name found in metadata, this should not happen! Skipping node: [{:?}]", node);
-                            continue;
-                        };
-                        debug!(
-                            "Creating pod on node [{}] for [{}] role and group [{}]",
-                            node.metadata
-                                .name
-                                .as_deref()
-                                .unwrap_or("<no node name found>"),
-                            monitoring_role,
-                            role_group
-                        );
-
-                        // now we have a node that needs a pod -> get validated config
-                        let validated_config = config_for_role_and_group(
-                            role_str,
-                            role_group,
-                            &self.validated_role_config,
-                        )?;
-
-                        let config_maps = self
-                            .create_config_maps(
-                                &monitoring_role,
-                                role_group,
-                                node_name,
-                                validated_config,
-                            )
-                            .await?;
-
-                        self.create_pod(
-                            &monitoring_role,
-                            role_group,
-                            node_name,
-                            &config_maps,
-                            validated_config,
-                        )
-                        .await?;
-
-                        return Ok(ReconcileFunctionAction::Requeue(Duration::from_secs(10)));
-                    }
-                    */
                 }
             }
         }
