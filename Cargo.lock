@@ -857,9 +857,9 @@ dependencies = [
 
 [[package]]
 name = "k8s-openapi"
-version = "0.13.0"
+version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "748acc444200aa3528dc131a8048e131a9e75a611a52d152e276e99199313d1a"
+checksum = "4f8de9873b904e74b3533f77493731ee26742418077503683db44e1b3c54aa5c"
 dependencies = [
  "base64",
  "bytes",
@@ -876,6 +876,39 @@ version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0ae4dcb1a65182551922303a2d292b463513a6727db5ad980afbd32df7f3c16"
 dependencies = [
+ "http",
+ "hyper-rustls",
+ "hyper-tls",
+ "k8s-openapi",
+ "kube-core 0.60.0",
+ "kube-derive",
+ "openssl",
+ "rustls",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio-native-tls",
+ "webpki",
+]
+
+[[package]]
+name = "kube"
+version = "0.62.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8db51365e1dbaaf9e5216849ca7d0c03e2c43bae5a9d7a4f6104999448eb16b4"
+dependencies = [
+ "kube-client",
+ "kube-core 0.62.0",
+ "kube-runtime",
+]
+
+[[package]]
+name = "kube-client"
+version = "0.62.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cd12d68768b54bbd50547f4c7b57b73cff680ef8da3ba409463ee995cf0d707"
+dependencies = [
  "base64",
  "bytes",
  "chrono",
@@ -885,18 +918,14 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "hyper-rustls",
  "hyper-timeout",
  "hyper-tls",
  "jsonpath_lib",
  "k8s-openapi",
- "kube-core",
- "kube-derive",
+ "kube-core 0.62.0",
  "openssl",
  "pem",
  "pin-project 1.0.8",
- "rustls",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -907,7 +936,6 @@ dependencies = [
  "tower",
  "tower-http",
  "tracing",
- "webpki",
 ]
 
 [[package]]
@@ -916,6 +944,23 @@ version = "0.60.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04ccd59635e9b21353da8d4a394bb5d3473b5965ed44496c8f857281b0625ffe"
 dependencies = [
+ "form_urlencoded",
+ "http",
+ "json-patch",
+ "k8s-openapi",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "kube-core"
+version = "0.62.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7cb6083983fc47d9144f1796d47edfeaba7e012de94c151bec8533af89d9b198"
+dependencies = [
+ "chrono",
  "form_urlencoded",
  "http",
  "json-patch",
@@ -941,16 +986,16 @@ dependencies = [
 
 [[package]]
 name = "kube-runtime"
-version = "0.60.0"
+version = "0.62.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eec378b03890f9f2bfa9448a51aa0f6a4299f6bb2ed0d180330e628c7a395918"
+checksum = "1dc77aa51353e95d9f16157adf9f8e5322ec8fa2bffaabe895ed815b968cfc5e"
 dependencies = [
  "dashmap",
  "derivative",
  "futures",
  "json-patch",
  "k8s-openapi",
- "kube",
+ "kube-client",
  "pin-project 1.0.8",
  "serde",
  "serde_json",
@@ -1329,6 +1374,22 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "thiserror",
+]
+
+[[package]]
+name = "product-config"
+version = "0.2.0-nightly"
+source = "git+https://github.com/stackabletech/product-config.git?branch=main#97734dfa78c5e96922b2fc99bbd0cf2a1b7ac89d"
+dependencies = [
+ "java-properties",
+ "regex",
+ "schemars",
+ "semver",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror",
+ "xml-rs",
 ]
 
 [[package]]
@@ -1757,8 +1818,8 @@ version = "0.3.0-nightly"
 dependencies = [
  "indoc",
  "k8s-openapi",
- "kube",
- "product-config",
+ "kube 0.60.0",
+ "product-config 0.1.0",
  "rstest",
  "schemars",
  "semver",
@@ -1766,8 +1827,8 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "stackable-operator",
- "strum 0.22.0",
- "strum_macros 0.22.0",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tracing",
 ]
@@ -1780,8 +1841,8 @@ dependencies = [
  "futures",
  "handlebars",
  "k8s-openapi",
- "kube",
- "product-config",
+ "kube 0.60.0",
+ "product-config 0.1.0",
  "rstest",
  "serde",
  "serde_json",
@@ -1789,8 +1850,8 @@ dependencies = [
  "serde_yaml",
  "stackable-monitoring-crd",
  "stackable-operator",
- "strum 0.22.0",
- "strum_macros 0.22.0",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tracing",
 ]
@@ -1813,7 +1874,7 @@ dependencies = [
 [[package]]
 name = "stackable-operator"
 version = "0.2.3-nightly"
-source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#2e86c04a89a839446bee48e8df68006af04a14be"
+source = "git+https://github.com/stackabletech/operator-rs.git?branch=main#ef9f4c9d335d21bf7ecc542c7c1f55293b422462"
 dependencies = [
  "async-trait",
  "backoff",
@@ -1824,18 +1885,17 @@ dependencies = [
  "futures",
  "json-patch",
  "k8s-openapi",
- "kube",
- "kube-runtime",
+ "kube 0.62.0",
  "lazy_static",
- "product-config",
+ "product-config 0.2.0-nightly",
  "rand",
  "regex",
  "schemars",
  "serde",
  "serde_json",
  "serde_yaml",
- "strum 0.21.0",
- "strum_macros 0.21.1",
+ "strum",
+ "strum_macros",
  "thiserror",
  "tokio",
  "tracing",
@@ -1858,27 +1918,9 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "strum"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aaf86bbcfd1fa9670b7a129f64fc0c9fcbbfe4f1bc4210e9e98fe71ffc12cde2"
-
-[[package]]
-name = "strum"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f7ac893c7d471c8a21f31cfe213ec4f6d9afeed25537c772e08ef3f005f8729e"
-
-[[package]]
-name = "strum_macros"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d06aaeeee809dbc59eb4556183dd927df67db1540de5be8d3ec0b6636358a5ec"
-dependencies = [
- "heck",
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "strum_macros"
@@ -2412,6 +2454,12 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2d7d3948613f75c98fd9328cfdcc45acc4d360655289d0a7d4ec931392200a3"
 
 [[package]]
 name = "yaml-rust"
