@@ -10,17 +10,20 @@ All notable changes to this project will be documented in this file.
 - Use sticky scheduler ([#67])
 
 ### Changed:
-- `kube-rs`: `0.59` → `0.60` ([#61]).
-- `k8s-openapi` `0.12` → `0.13` and features: `v1_21` → `v1_22` ([#61]).
-- `operator-rs` `0.2.1` → `0.2.2` ([#61]).
+- `operator-rs` `0.2.2` → `0.3.0` ([#85]).
+- Moved `wait_until_crds_present` to `operator-binary` ([#85]).
 
 ### Removed
+- Dependency `kube-rs` ([#85]).
+- Dependency `k8s-openapi` ([#85]).
+- Dependency `product-config` ([#85]).
 - Code for version handling ([#55]).
 - Removed `current_version` and `target_version` from cluster status ([#55]).
 
+[#85]: https://github.com/stackabletech/monitoring-operator/pull/85
+[#67]: https://github.com/stackabletech/monitoring-operator/pull/67
 [#61]: https://github.com/stackabletech/monitoring-operator/pull/61
 [#55]: https://github.com/stackabletech/monitoring-operator/pull/55
-[#67]: https://github.com/stackabletech/monitoring-operator/pull/67
 
 ## [0.2.0] - 2021-09-14
 
