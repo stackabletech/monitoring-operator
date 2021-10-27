@@ -1,16 +1,16 @@
 pub mod error;
 
 use error::Error;
-use k8s_openapi::api::core::v1::ContainerPort;
-use k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
-use kube::CustomResource;
-use schemars::JsonSchema;
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use stackable_operator::builder::ContainerPortBuilder;
 use stackable_operator::identity::PodToNodeMapping;
+use stackable_operator::k8s_openapi::api::core::v1::ContainerPort;
+use stackable_operator::k8s_openapi::apimachinery::pkg::apis::meta::v1::Condition;
+use stackable_operator::kube::CustomResource;
 use stackable_operator::product_config_utils::{ConfigError, Configuration};
 use stackable_operator::role_utils::{CommonConfiguration, Role, RoleGroup};
+use stackable_operator::schemars::{self, JsonSchema};
 use stackable_operator::status::{Conditions, Status, Versioned};
 use stackable_operator::versioning::{ProductVersion, Versioning, VersioningState};
 use std::cmp::Ordering;
@@ -46,9 +46,12 @@ pub const CONFIG_MAP_TYPE_CONFIG: &str = "config";
     kind = "MonitoringCluster",
     plural = "monitoringclusters",
     shortname = "mc",
-    namespaced
+    namespaced,
+    status = "MonitoringClusterStatus",
+    kube_core = "stackable_operator::kube::core",
+    k8s_openapi = "stackable_operator::k8s_openapi",
+    schemars = "stackable_operator::schemars"
 )]
-#[kube(status = "MonitoringClusterStatus")]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringClusterSpec {
     pub version: MonitoringVersion,

@@ -1,7 +1,9 @@
 use clap::{crate_version, App, AppSettings, SubCommand};
 use stackable_monitoring_crd::MonitoringCluster;
+use stackable_operator::kube::CustomResourceExt;
 use stackable_operator::{cli, logging};
 use stackable_operator::{client, error};
+use tracing::error;
 
 mod built_info {
     // The file has been placed there by the build script.
@@ -48,6 +50,17 @@ async fn main() -> Result<(), error::Error> {
 
     let client = client::create_client(Some("monitoring.stackable.tech".to_string())).await?;
 
-    stackable_monitoring_operator::create_controller(client, &product_config_path).await?;
-    Ok(())
+    // This will wait for (but not create) all CRDs we need.
+    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
+        &client,
+        vec![MonitoringCluster::crd_name()],
+        None,
+    )
+    .await
+    {
+        error!("Required CRDs missing, aborting: {:?}", error);
+        return Err(error);
+    };
+
+    stackable_monitoring_operator::create_controller(client, &product_config_path).await
 }
