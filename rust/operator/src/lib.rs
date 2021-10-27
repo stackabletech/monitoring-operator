@@ -7,12 +7,6 @@ use crate::prometheus::{
 };
 
 use async_trait::async_trait;
-use k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
-use kube::api::{ListParams, ResourceExt};
-use kube::Api;
-use kube::CustomResourceExt;
-use product_config::types::PropertyNameKind;
-use product_config::ProductConfigManager;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringRole, APP_NAME, CONFIG_DIR,
     CONFIG_MAP_TYPE_CONFIG, NODE_METRICS_PORT, PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
@@ -25,10 +19,15 @@ use stackable_operator::error::OperatorResult;
 use stackable_operator::identity::{
     LabeledPodIdentityFactory, NodeIdentity, PodIdentity, PodToNodeMapping,
 };
+use stackable_operator::k8s_openapi::api::core::v1::{ConfigMap, EnvVar, Pod};
+use stackable_operator::kube::api::{ListParams, ResourceExt};
+use stackable_operator::kube::Api;
 use stackable_operator::labels;
 use stackable_operator::labels::{
     build_common_labels_for_all_managed_resources, get_recommended_labels,
 };
+use stackable_operator::product_config::types::PropertyNameKind;
+use stackable_operator::product_config::ProductConfigManager;
 use stackable_operator::product_config_utils::{
     config_for_role_and_group, transform_all_roles_to_config, validate_all_roles_and_groups_config,
     ValidatedRoleConfigByPropertyKind,
@@ -68,7 +67,6 @@ struct MonitoringState {
 
 impl MonitoringState {
     /// Required labels for pods. Pods without any of these will deleted and/or replaced.
-    // TODO: Now we create this every reconcile run, should be created once and reused.
     pub fn get_required_labels(&self) -> BTreeMap<String, Option<Vec<String>>> {
         let roles = MonitoringRole::iter()
             .map(|role| role.to_string())
@@ -613,18 +611,6 @@ impl ControllerStrategy for MonitoringStrategy {
 ///
 /// This is an async method and the returned future needs to be consumed to make progress.
 pub async fn create_controller(client: Client, product_config_path: &str) -> OperatorResult<()> {
-    // This will wait for (but not create) all CRDs we need.
-    if let Err(error) = stackable_operator::crd::wait_until_crds_present(
-        &client,
-        vec![MonitoringCluster::crd_name()],
-        None,
-    )
-    .await
-    {
-        error!("Required CRDs missing, aborting: {:?}", error);
-        return Err(error);
-    };
-
     let monitoring_api: Api<MonitoringCluster> = client.get_all_api();
     let pods_api: Api<Pod> = client.get_all_api();
     let config_maps_api: Api<ConfigMap> = client.get_all_api();

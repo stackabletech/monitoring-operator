@@ -1,3 +1,4 @@
+use stackable_operator::kube;
 use std::num::ParseIntError;
 
 #[derive(Debug, thiserror::Error)]
