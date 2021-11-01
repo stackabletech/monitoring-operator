@@ -15,7 +15,7 @@ stackable-monitoring-operator = { path = "../operator" }
 
 anyhow = "1.0"
 clap = "2.33"
-tokio = { version = "1.12", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.13", features = ["macros", "rt-multi-thread"] }
 tracing = "0.1"
 
 [build-dependencies]
