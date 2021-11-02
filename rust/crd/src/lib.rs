@@ -22,8 +22,8 @@ pub const APP_NAME: &str = "monitoring";
 pub const MANAGED_BY: &str = "monitoring-operator";
 
 // directories
-pub const CONFIG_DIR: &str = "conf";
-pub const DATA_DIR: &str = "data";
+pub const CONFIG_DIR: &str = "/stackable/conf";
+pub const DATA_DIR: &str = "/stackable/data";
 
 // pod and cluster (federation) metrics level
 pub const PROM_SCRAPE_INTERVAL: &str = "scrapeInterval";
@@ -276,25 +276,19 @@ impl MonitoringRole {
     pub fn image(&self, version: &MonitoringVersion) -> String {
         match self {
             MonitoringRole::PodAggregator | MonitoringRole::Federation => {
-                format!("stackable/prometheus:{}", version.to_string())
+                "prometheus-test:latest".to_string()
             }
-            MonitoringRole::NodeExporter => {
-                format!("node-exporter:{}", version.node_exporter())
-            }
+            MonitoringRole::NodeExporter => "node-exporter-test:latest".to_string(),
         }
     }
 
     pub fn command(&self, version: &MonitoringVersion) -> Vec<String> {
         let mut command = vec![];
         match self {
-            MonitoringRole::PodAggregator | MonitoringRole::Federation => command.push(format!(
-                "prometheus-{}.linux-amd64/prometheus-wrapper.sh",
-                version.to_string()
-            )),
-            MonitoringRole::NodeExporter => command.push(format!(
-                "node_exporter-{}.linux-amd64/node_exporter",
-                version.node_exporter()
-            )),
+            MonitoringRole::PodAggregator | MonitoringRole::Federation => {
+                command.push("./prometheus".to_string())
+            }
+            MonitoringRole::NodeExporter => command.push("./node_exporter".to_string()),
         }
         command
     }
@@ -305,15 +299,12 @@ impl MonitoringRole {
             MonitoringRole::PodAggregator | MonitoringRole::Federation => {
                 command.push(format!("--web.listen-address=:{}", port));
                 command.push(format!(
-                    "--config.file={{{{configroot}}}}/{}/{}",
+                    "--config.file={}/{}",
                     CONFIG_DIR, PROMETHEUS_CONFIG_YAML
                 ));
-                command.push("--log.level debug".to_string());
+                //command.push("--log.level debug".to_string());
                 if args.is_empty() {
-                    command.push(format!(
-                        "--storage.tsdb.path={{{{configroot}}}}/{}/",
-                        DATA_DIR
-                    ));
+                    command.push(format!("--storage.tsdb.path={}", DATA_DIR));
                 } else {
                     command.extend(args);
                 }
@@ -333,24 +324,24 @@ impl MonitoringRole {
         match self {
             MonitoringRole::PodAggregator => {
                 container_ports.push(
-                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                    ContainerPortBuilder::new(metrics_port.parse::<i32>()?)
                         .name("metrics")
                         .build(),
                 );
                 container_ports.push(
-                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                    ContainerPortBuilder::new(metrics_port.parse::<i32>()?)
                         .name("http")
                         .build(),
                 );
             }
             MonitoringRole::NodeExporter => container_ports.push(
-                ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                ContainerPortBuilder::new(metrics_port.parse::<i32>()?)
                     .name("metrics")
                     .build(),
             ),
             MonitoringRole::Federation => {
                 container_ports.push(
-                    ContainerPortBuilder::new(metrics_port.parse::<u16>()?)
+                    ContainerPortBuilder::new(metrics_port.parse::<i32>()?)
                         .name("http")
                         .build(),
                 );

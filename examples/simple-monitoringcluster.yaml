@@ -9,7 +9,7 @@ spec:
       default:
         selector:
           matchLabels:
-            kubernetes.io/arch: stackable-linux
+            kubernetes.io/os: linux
         config:
           webUiPort: 9090
           scrapeInterval: 15s
@@ -17,14 +17,14 @@ spec:
           evaluationInterval: 10s
           scheme: http
           cliArgs:
-            - "--storage.tsdb.path={{configroot}}/aggregator_data/"
+            - "--storage.tsdb.path=/stackable/data"
             - "--storage.tsdb.retention.time=7d"
   nodeExporter:
     roleGroups:
       default:
         selector:
           matchLabels:
-            kubernetes.io/arch: stackable-linux
+            kubernetes.io/os: linux
         config:
           metricsPort: 10102
           cliArgs:
@@ -38,7 +38,7 @@ spec:
       default:
         selector:
           matchLabels:
-            kubernetes.io/arch: stackable-linux
+            kubernetes.io/os: linux
         replicas: 1
         config:
           webUiPort: 9404
@@ -47,7 +47,7 @@ spec:
           evaluationInterval: 10s
           scheme: http
           cliArgs:
-            - "--storage.tsdb.path={{configroot}}/federation_data/"
+            - "--storage.tsdb.path=/stackable/data"
             - "--storage.tsdb.retention.time=30d"
 
 

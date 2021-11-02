@@ -9,9 +9,9 @@ use crate::prometheus::{
 use async_trait::async_trait;
 use stackable_monitoring_crd::{
     MonitoringCluster, MonitoringClusterSpec, MonitoringRole, APP_NAME, CONFIG_DIR,
-    CONFIG_MAP_TYPE_CONFIG, NODE_METRICS_PORT, PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
+    CONFIG_MAP_TYPE_CONFIG, DATA_DIR, NODE_METRICS_PORT, PROMETHEUS_CONFIG_YAML, PROM_WEB_UI_PORT,
 };
-use stackable_operator::builder::{ContainerBuilder, ObjectMetaBuilder, PodBuilder};
+use stackable_operator::builder::{ContainerBuilder, ObjectMetaBuilder, PodBuilder, VolumeBuilder};
 use stackable_operator::client::Client;
 use stackable_operator::controller::Controller;
 use stackable_operator::controller::{ControllerStrategy, ReconciliationState};
@@ -405,12 +405,18 @@ impl MonitoringState {
         cb.add_env_vars(env_vars);
         cb.add_container_ports(role.container_ports(scrape_port)?);
 
-        // One mount for the config directory
-        // TODO: add data volume
+        let mut pod_builder = PodBuilder::new();
+
         if role != &MonitoringRole::NodeExporter {
+            // One mount for the config directory
             if let Some(config_map_data) = config_maps.get(CONFIG_MAP_TYPE_CONFIG) {
                 if let Some(name) = config_map_data.metadata.name.as_ref() {
-                    cb.add_configmapvolume(name, CONFIG_DIR.to_string());
+                    cb.add_volume_mount(CONFIG_MAP_TYPE_CONFIG, CONFIG_DIR);
+                    pod_builder.add_volume(
+                        VolumeBuilder::new(CONFIG_MAP_TYPE_CONFIG)
+                            .with_config_map(name)
+                            .build(),
+                    );
                 } else {
                     return Err(error::Error::MissingConfigMapNameError {
                         cm_type: CONFIG_MAP_TYPE_CONFIG,
@@ -422,9 +428,20 @@ impl MonitoringState {
                     pod_name,
                 });
             }
+            // One mount for data dir
+            cb.add_volume_mount("data", DATA_DIR);
+            pod_builder.add_volume(
+                VolumeBuilder::new("data")
+                    .with_empty_dir(Some(""), None)
+                    .build(),
+            );
         }
 
-        let pod = PodBuilder::new()
+        // TODO: remove with packages from repo. Only for local testing
+        let mut container = cb.build();
+        container.image_pull_policy = Some("IfNotPresent".to_string());
+
+        let pod = pod_builder
             .metadata(
                 ObjectMetaBuilder::new()
                     .generate_name(pod_name)
@@ -434,7 +451,7 @@ impl MonitoringState {
                     .build()?,
             )
             .add_stackable_agent_tolerations()
-            .add_container(cb.build())
+            .add_container(container)
             .node_name(node_id.name.as_str())
             .build()?;
 
