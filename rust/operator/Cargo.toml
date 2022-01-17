@@ -21,7 +21,7 @@ strum = "0.22"
 strum_macros = "0.22"
 thiserror = "1.0"
 tracing = "0.1"
-handlebars = "4.1"
+handlebars = "4.2"
 
 [dev-dependencies]
 rstest = "0.11"
